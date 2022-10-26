@@ -4,8 +4,8 @@
 CC=gcc
 
 CPPFLAGS= `pkg-config --cflags sdl gtk+-3.0` -MMD
-CFLAGS= -Wall -Wextra -Werror -std=c99 -O3 -g
-LDFLAGS= -rdynamic
+CFLAGS= -Wall -Wextra -Werror -std=c99 -O3
+LDFLAGS= -ldl -lm -rdynamic
 LDLIBS= `pkg-config --libs sdl gtk+-3.0` -lSDL_image
 
 SRC= main.c source/process/process.c source/sdl/our_sdl.c source/segmentation/segmentation.c source/network/network.c source/network/tools.c source/GUI/gui.c
@@ -22,6 +22,11 @@ create:
 	touch source/OCR/ocrwb.txt
 
 main: $(OBJ)
+
+debug: CFLAGS+= -g
+debug: LDFLAGS+= -fsanitize=address
+debug: LDLIBS+= -lasan
+debug: all
 
 clean:
 	rm -rf *.bmp img/temp/*.bmp source/Xor source/OCR *.tst img/training/maj/*.txt img/training/min/*.txt
