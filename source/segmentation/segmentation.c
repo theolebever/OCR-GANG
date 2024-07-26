@@ -36,7 +36,6 @@ int CountBlocs(SDL_Surface *image)
     Uint32 pixel;
     Uint8 red;
     int Count = 0; // Count each bloc in image
-    char boo; // boo is boolean
     int Ymax;
     for (int i = 0; i < image->h; i++)
     {
@@ -44,15 +43,14 @@ int CountBlocs(SDL_Surface *image)
         red = getRed(pixel, image->format);
         if (red == 0 || red == 255)
         {
-            boo = 1;
             Ymax = i;
-            while (boo && Ymax < image->h)
+            while (Ymax < image->h)
             {
-                Ymax++;
                 pixel = get_pixel(image, 0, Ymax);
                 red = getRed(pixel, image->format);
                 if (red == 128)
-                    boo = 0;
+                    break;
+                Ymax++;
             }
             Count++;
             i = Ymax;
@@ -97,43 +95,33 @@ int *DivideIntoBlocs(SDL_Surface *image, SDL_Surface **blocs,
                      SDL_Surface ***chars, int Len)
 {
     Uint32 pixel;
-    Uint8 red;
-    Uint8 green;
-    SDL_Rect bloc;
-    int Count = 0;
-    char boo;
-    int Ymin;
-    int Ymax;
-    SDL_Rect chr;
-    SDL_Rect center;
-    char chrBoo;
-    int Xmin;
-    int Xmax;
-    int size;
+    Uint8 red, green;
+    SDL_Rect bloc, chr, center;
+    int Count = 0, Ymin, Ymax, Xmin, Xmax, size;
     int *CharsCount = malloc(sizeof(int) * Len);
+
     for (int i = 0; i < image->h; i++)
     {
         pixel = get_pixel(image, 0, i);
         red = getRed(pixel, image->format);
         if (red == 0 || red == 255)
         {
-            boo = 1;
             Ymin = i;
             Ymax = i;
-            while (boo && Ymax < image->h)
+            while (Ymax < image->h)
             {
-                Ymax++;
                 pixel = get_pixel(image, 0, Ymax);
                 red = getRed(pixel, image->format);
                 if (red == 128)
-                {
-                    boo = 0;
-                }
+                    break;
+                Ymax++;
             }
+
             bloc.x = 0;
             bloc.y = Ymin;
             bloc.w = image->w;
             bloc.h = Ymax - Ymin;
+
             SDL_UnlockSurface(image);
             blocs[Count] = SDL_CreateRGBSurface(SDL_HWSURFACE, bloc.w, bloc.h,
                                                 32, 0, 0, 0, 0);
@@ -145,9 +133,10 @@ int *DivideIntoBlocs(SDL_Surface *image, SDL_Surface **blocs,
             CharsCount[Count] = CharsNumber;
             chars[Count] = malloc(sizeof(SDL_Surface *) * CharsNumber);
             int CharCount = 0;
-            for (int i = 0; i < blocs[Count]->w; i++)
+
+            for (int j = 0; j < blocs[Count]->w; j++)
             {
-                pixel = get_pixel(blocs[Count], i, 0);
+                pixel = get_pixel(blocs[Count], j, 0);
                 red = getRed(pixel, blocs[Count]->format);
                 green = getGreen(pixel, blocs[Count]->format);
                 if (green == 128)
@@ -159,19 +148,17 @@ int *DivideIntoBlocs(SDL_Surface *image, SDL_Surface **blocs,
                 }
                 if (red == 0 || red == 255)
                 {
-                    chrBoo = 1;
-                    Xmin = i;
-                    Xmax = i;
-                    while (chrBoo && Xmax < blocs[Count]->w)
+                    Xmin = j;
+                    Xmax = j;
+                    while (Xmax < blocs[Count]->w)
                     {
-                        Xmax++;
                         pixel = get_pixel(blocs[Count], Xmax, 0);
                         red = getRed(pixel, blocs[Count]->format);
                         if (red == 128)
-                        {
-                            chrBoo = 0;
-                        }
+                            break;
+                        Xmax++;
                     }
+
                     chr.x = Xmin;
                     chr.y = 0;
                     chr.w = Xmax - Xmin;
@@ -179,6 +166,7 @@ int *DivideIntoBlocs(SDL_Surface *image, SDL_Surface **blocs,
                     size = (chr.h < chr.w ? chr.w : chr.h);
                     center.x = size / 2 - chr.w / 2;
                     center.y = size / 2 - chr.h / 2;
+
                     SDL_UnlockSurface(blocs[Count]);
                     chars[Count][CharCount] = SDL_CreateRGBSurface(
                         SDL_HWSURFACE, size, size, 32, 0, 0, 0, 0);
@@ -187,7 +175,7 @@ int *DivideIntoBlocs(SDL_Surface *image, SDL_Surface **blocs,
                                     &center);
                     SDL_LockSurface(blocs[Count]);
                     CharCount++;
-                    i = Xmax;
+                    j = Xmax;
                 }
             }
             Count++;
@@ -292,24 +280,34 @@ int ImageToMatrix(SDL_Surface ***chars, int ***chars_matrix, int *len,
     int count = 0;
     for (int j = 0; j < BlocNumber; ++j)
     {
-        for (int i = 0; i < len[j]; ++i)
-        {
-            count++;
-        }
+        count += len[j];
     }
-    *chars_matrix = malloc(sizeof(int) * 5000);
-    if (chars_matrix == NULL)
+
+    *chars_matrix = malloc(count * sizeof(int*));
+    if (*chars_matrix == NULL)
     {
         errx(1, "Not Enough Memory !");
     }
+
     count = 0;
     for (int j = 0; j < BlocNumber; ++j)
     {
         for (int i = 0; i < len[j]; ++i)
         {
-            (*chars_matrix)[count] = malloc(
-                chars[j][i]->w * chars[j][i]->h * sizeof(int) + sizeof(int));
-            (*chars_matrix)[count][0] = chars[j][i]->w * chars[j][i]->h;
+            int size = chars[j][i]->w * chars[j][i]->h;
+            (*chars_matrix)[count] = malloc((size + 1) * sizeof(int));
+            if ((*chars_matrix)[count] == NULL)
+            {
+                // Free previously allocated memory
+                for (int k = 0; k < count; k++)
+                {
+                    free((*chars_matrix)[k]);
+                }
+                free(*chars_matrix);
+                errx(1, "Not Enough Memory !");
+            }
+
+            (*chars_matrix)[count][0] = size;
             for (int y = 0; y < chars[j][i]->h; y++)
             {
                 for (int x = 0; x < chars[j][i]->w; x++)
@@ -321,8 +319,10 @@ int ImageToMatrix(SDL_Surface ***chars, int ***chars_matrix, int *len,
                         r == 255 ? 0 : 1;
                 }
             }
+
             int *char_resized = Resize1((*chars_matrix)[count], 28, 28,
                                         chars[j][i]->w, chars[j][i]->h);
+            free((*chars_matrix)[count]);  // Free the original array
             (*chars_matrix)[count] = char_resized;
             count++;
         }

@@ -1,6 +1,13 @@
 #include "gui.h"
 
 #include "../network/tools.h"
+#include "../network/OCR.h"
+
+// Colors for print
+#define KRED "\x1B[31m"
+#define KGRN "\x1B[32m"
+#define KWHT "\x1B[37m"
+
 
 gchar *filename = "";
 char *text = "";
@@ -47,7 +54,6 @@ void load_image(GtkButton *button, GtkImage *image)
             best = max_h / hi;
         int new_w = wi * best;
         int new_h = hi * best;
-        // printf("%d %d",new_w,new_h);
         SDL_Surface *new = resize(img, new_w, new_h);
         SDL_SaveBMP(new, "image_resize.bmp");
         gtk_image_set_from_file(GTK_IMAGE(image), "image_resize.bmp");
@@ -57,10 +63,6 @@ void load_image(GtkButton *button, GtkImage *image)
         gtk_image_set_from_file(GTK_IMAGE(image), filename);
     }
 }
-// Colors for print
-#define KRED "\x1B[31m"
-#define KGRN "\x1B[32m"
-#define KWHT "\x1B[37m"
 
 void open_image(GtkButton *button, GtkLabel *text_label)
 {
@@ -70,9 +72,6 @@ void open_image(GtkButton *button, GtkLabel *text_label)
     GtkWidget *dialog = gtk_file_chooser_dialog_new(
         ("Open image"), GTK_WINDOW(toplevel), GTK_FILE_CHOOSER_ACTION_OPEN,
         "Open", GTK_RESPONSE_ACCEPT, "Cancel", GTK_RESPONSE_CANCEL, NULL);
-
-    // gtk_file_filter_add_pixbuf_formats (filter);
-    // gtk_file_chooser_add_filter (GTK_FILE_CHOOSER (dialog),filter);
 
     switch (gtk_dialog_run(GTK_DIALOG(dialog)))
     {
@@ -87,70 +86,40 @@ void open_image(GtkButton *button, GtkLabel *text_label)
     gtk_widget_destroy(dialog);
 }
 
-int train_neural_network()
-{
-    prepare_training();
-    struct network *network =
-        initialize_network(28 * 28, 20, 52, "source/OCR/ocrwb.txt");
-    char *filepath = "img/training/maj/A0.txt\0";
-    char expected_result[52] = { 'A', 'a', 'B', 'b', 'C', 'c', 'D', 'd', 'E',
-                                 'e', 'F', 'f', 'G', 'g', 'H', 'h', 'I', 'i',
-                                 'J', 'j', 'K', 'k', 'L', 'I', 'M', 'm', 'N',
-                                 'n', 'O', 'o', 'P', 'p', 'Q', 'q', 'R', 'r',
-                                 'S', 's', 'I', 't', 'U', 'u', 'V', 'v', 'W',
-                                 'w', 'X', 'x', 'Y', 'y', 'Z', 'z' };
-    int nb = 5000;
-    int step = 0;
-    for (size_t number = 0; number < (size_t)nb; number++)
-    {
-        for (size_t i = 0; i < 52; i++)
-        {
-            for (size_t index = 0; index < 4; index++)
-            {
-                step++;
-                progressBar(step, nb * 52 * 4);
-                filepath = update_path(filepath, (size_t)strlen(filepath),
-                                      expected_result[i], index);
-                ExpectedOutput(network, expected_result[i]);
-                InputFromTXT(filepath, network);
-                forward_pass(network);
-                // PrintState(expected_result[i],RetrieveChar(IndexAnswer(network)));
-                back_propagation(network);
-                update_weights_and_biases(network);
-            }
-        }
-    }
-    printf("\n");
-    printf("\e[?25h");
-    save_network("source/OCR/ocrwb.txt", network);
-    free(network);
-    return EXIT_SUCCESS;
-}
 
 int OCR(GtkButton *button, GtkTextBuffer *buffer)
 {
     UNUSED(button);
-    struct network *network =
-        initialize_network(28 * 28, 20, 52, "source/OCR/ocrwb.txt");
+    
+    struct network *network = initialize_network(28 * 28, 20, 52, "source/OCR/ocrwb.txt");
     init_sdl();
     SDL_Surface *image = load__image((char *)filename);
     image = black_and_white(image);
     g_print("Black and White and Binarization Done !\n");
+    
     DrawRedLines(image);
     int BlocCount = CountBlocs(image);
     SDL_Surface ***chars = malloc(sizeof(SDL_Surface **) * BlocCount);
     SDL_Surface **blocs = malloc(sizeof(SDL_Surface *) * BlocCount);
     int *charslen = DivideIntoBlocs(image, blocs, chars, BlocCount);
+    
     SDL_SaveBMP(image, "segmentation.bmp");
     g_print("Segmentation Done !\n");
-    for (int j = 0; j < BlocCount; ++j)
-    {
-        SDL_FreeSurface(blocs[j]);
-    }
+    
+    free_surfaces(blocs, BlocCount);
 
     int **chars_matrix = NULL;
     int chars_count = ImageToMatrix(chars, &chars_matrix, charslen, BlocCount);
-    char *result = calloc(chars_count, sizeof(char));
+    
+    free_chars(chars, charslen, BlocCount);
+
+    char *result = calloc(chars_count + 1, sizeof(char));  // +1 for null terminator
+    if (result == NULL) {
+        free_network(network);
+        SDL_FreeSurface(image);
+        SDL_Quit();
+        return EXIT_FAILURE;
+    }
 
     for (size_t index = 0; index < (size_t)chars_count; index++)
     {
@@ -158,19 +127,26 @@ int OCR(GtkButton *button, GtkTextBuffer *buffer)
         if (!is_espace)
         {
             forward_pass(network);
-            size_t index_answer = IndexAnswer(network);
-            result[index] = RetrieveChar(index_answer);
+            size_t idx_answer = index_answer(network);
+            result[index] = retrieve_char(idx_answer);
         }
         else
         {
             result[index] = ' ';
         }
     }
+
+    free_chars_matrix(chars_matrix, chars_count);
+    SDL_FreeSurface(image);
     SDL_Quit();
     g_print("OCR Done !\n");
+
     text = result;
     gtk_text_buffer_set_text(buffer, result, strlen(result));
-    free(network);
+    
+    free_network(network);
+    free(result);
+    
     return EXIT_SUCCESS;
 }
 

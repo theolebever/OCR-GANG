@@ -73,37 +73,41 @@ int file_exists(const char *filename)
     return 1;
 }
 
-int fileempty(const char *filename)
+int file_empty(const char *filename)
 {
+    
     FILE *fptr;
     fptr = fopen(filename, "r");
-    fseek(fptr, 0, SEEK_END);
-    unsigned long len = (unsigned long)ftell(fptr);
-    if (len > 0)
-    {
-        return 0;
-    }
-    else
+    if (fptr == NULL)
     {
         return 1;
     }
+    fseek(fptr, 0, SEEK_END);
+    unsigned long len = (unsigned long)ftell(fptr);
+    return !(len > 0);
 }
 
 void save_network(const char *filename, struct network *network)
 {
-    FILE *output = fopen(filename, "w");
-    for (int k = 0; k < network->number_of_inputs; k++)
+    if (!file_exists(filename))
     {
-        for (int o = 0; o < network->number_of_hidden_nodes; o++)
+        printf("Cannot save network!\n");
+        return;
+    }
+
+    FILE *output = fopen(filename, "w");
+    for (size_t k = 0; k < network->number_of_inputs; k++)
+    {
+        for (size_t o = 0; o < network->number_of_hidden_nodes; o++)
         {
             fprintf(output, "%lf %lf\n", network->hidden_layer_bias[o],
                     network->hidden_weights[k * network->number_of_hidden_nodes
                                             + o]);
         }
     }
-    for (int i = 0; i < network->number_of_hidden_nodes; i++)
+    for (size_t i = 0; i < network->number_of_hidden_nodes; i++)
     {
-        for (int a = 0; a < network->number_of_outputs; a++)
+        for (size_t a = 0; a < network->number_of_outputs; a++)
         {
             fprintf(
                 output, "%lf %lf\n", network->output_layer_bias[a],
@@ -116,18 +120,18 @@ void save_network(const char *filename, struct network *network)
 void load_network(const char *filename, struct network *network)
 {
     FILE *input = fopen(filename, "r");
-    for (int k = 0; k < network->number_of_inputs; k++)
+    for (size_t k = 0; k < network->number_of_inputs; k++)
     {
-        for (int o = 0; o < network->number_of_hidden_nodes; o++)
+        for (size_t o = 0; o < network->number_of_hidden_nodes; o++)
         {
             fscanf(input, "%lf %lf\n", &network->hidden_layer_bias[o],
                    &network->hidden_weights[k * network->number_of_hidden_nodes
                                             + o]);
         }
     }
-    for (int i = 0; i < network->number_of_hidden_nodes; i++)
+    for (size_t i = 0; i < network->number_of_hidden_nodes; i++)
     {
-        for (int a = 0; a < network->number_of_outputs; a++)
+        for (size_t a = 0; a < network->number_of_outputs; a++)
         {
             fscanf(
                 input, "%lf %lf\n", &network->output_layer_bias[a],
@@ -151,7 +155,7 @@ void shuffle(int *array, size_t n)
     }
 }
 
-size_t IndexAnswer(struct network *net)
+size_t index_answer(struct network *net)
 {
     size_t index = 0;
     for (size_t i = 1; i < (size_t)net->number_of_outputs; i++)
@@ -163,7 +167,7 @@ size_t IndexAnswer(struct network *net)
     }
     return index;
 }
-char RetrieveChar(size_t val)
+char retrieve_char(size_t val)
 {
     char c;
 
@@ -221,7 +225,7 @@ char RetrieveChar(size_t val)
     return c;
 }
 
-size_t ExpectedPos(char c)
+size_t expected_pos(char c)
 {
     size_t index = (size_t)c;
     if (c >= 'A' && c <= 'Z')
@@ -235,7 +239,7 @@ size_t ExpectedPos(char c)
     return index;
 }
 
-void ExpectedOutput(struct network *network, char c)
+void expected_output(struct network *network, char c)
 {
     if (c >= 'A' && c <= 'Z')
         network->goal[(int)(c)-65] = 1;
@@ -252,11 +256,9 @@ char *update_path(const char *filepath, size_t len, char c, size_t index)
         fprintf(stderr, "Memory allocation failed\n");
         exit(1);
     }
-
     // Copy the original path
     strncpy(newpath, filepath, len);
     newpath[len] = '\0';  // Ensure null-termination
-
     // Update specific positions
     if (len > 17) newpath[17] = c;
     if (len > 15) {
@@ -269,26 +271,16 @@ char *update_path(const char *filepath, size_t len, char c, size_t index)
         }
     }
     if (len > 18) newpath[18] = (char)(index + 48);
-
     return newpath;
 }
 
-void PrintState(char expected, char obtained)
-{
-    printf("Char entered: %c | Char recoginized: %c ", expected, obtained);
-    if (expected == obtained)
-    {
-        printf("=> %sOK%s\n", KGRN, KWHT);
-    }
-    else
-    {
-        printf("=> %sKO%s\n", KRED, KWHT);
-    }
-}
-
-void InputFromTXT(char *filepath, struct network *net)
+void input_from_txt(char *filepath, struct network *net)
 {
     FILE *file = fopen(filepath, "r");
+    if (file == NULL)
+    {
+        exit(1);
+    }
     size_t size = 28;
     for (size_t i = 0; i < size; i++)
     {
@@ -314,7 +306,7 @@ void prepare_training()
                                  'w', 'X', 'x', 'Y', 'y', 'Z', 'z' };
     int **chars_matrix = NULL;
     int nb = 52;
-
+    
     for (size_t i = 0; i < (size_t)nb; i++)
     {
         for (size_t index = 0; index < 4; index++)
@@ -323,7 +315,6 @@ void prepare_training()
                                          expected_result[i], index);
             char *filematrix = update_path(base_filematrix, strlen(base_filematrix),
                                            expected_result[i], index);
-
             SDL_Surface *image = load__image(filepath);
             image = black_and_white(image);
             DrawRedLines(image);
@@ -331,31 +322,41 @@ void prepare_training()
             SDL_Surface ***chars = malloc(sizeof(SDL_Surface **) * BlocCount);
             SDL_Surface **blocs = malloc(sizeof(SDL_Surface *) * BlocCount);
             int *charslen = DivideIntoBlocs(image, blocs, chars, BlocCount);
-
+            
             for (int j = 0; j < BlocCount; ++j)
             {
                 SDL_FreeSurface(blocs[j]);
             }
-
-            ImageToMatrix(chars, &chars_matrix, charslen, BlocCount);
+            
+            int chars_count = ImageToMatrix(chars, &chars_matrix, charslen, BlocCount);
             SaveMatrix(chars_matrix, filematrix);
-
+            
             // Free allocated memory
             free(filepath);
             free(filematrix);
+            
+            // Free chars
+            for (int j = 0; j < BlocCount; ++j)
+            {
+                for (int k = 0; k < charslen[j]; ++k)
+                {
+                    SDL_FreeSurface(chars[j][k]);
+                }
+                free(chars[j]);
+            }
             free(chars);
+            
             free(blocs);
             free(charslen);
             SDL_FreeSurface(image);
+            
+            // Free chars_matrix
+            for (int j = 0; j < chars_count; ++j)
+            {
+                free(chars_matrix[j]);
+            }
+            free(chars_matrix);
+            chars_matrix = NULL;
         }
-    }
-
-    // Free chars_matrix if it was allocated
-    if (chars_matrix != NULL) {
-        // Assuming you know the dimensions of chars_matrix
-        for (int i = 0; i < 28; i++) {
-            free(chars_matrix[i]);
-        }
-        free(chars_matrix);
     }
 }

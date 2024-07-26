@@ -168,7 +168,7 @@ struct network *initialize_network(double i, double h, double o, const char *fil
     network->eta = INITIAL_ETA;
     network->alpha = INITIAL_ALPHA;
 
-    if (!fileempty(filepath))
+    if (!file_empty(filepath))
     {
         load_network(filepath, network);
     }
@@ -181,18 +181,18 @@ struct network *initialize_network(double i, double h, double o, const char *fil
 
 void initialization(struct network *net)
 {
-    for (int i = 0; i < net->number_of_inputs; i++)
+    for (size_t i = 0; i < net->number_of_inputs; i++)
     {
-        for (int j = 0; j < net->number_of_hidden_nodes; j++)
+        for (size_t j = 0; j < net->number_of_hidden_nodes; j++)
         {
             net->hidden_layer_bias[j] = init_weight();
             net->hidden_weights[i * net->number_of_hidden_nodes + j] =
                 init_weight();
         }
     }
-    for (int k = 0; k < net->number_of_hidden_nodes; k++)
+    for (size_t k = 0; k < net->number_of_hidden_nodes; k++)
     {
-        for (int l = 0; l < net->number_of_outputs; l++)
+        for (size_t l = 0; l < net->number_of_outputs; l++)
         {
             net->output_layer_bias[l] = init_weight();
             net->output_weights[k * net->number_of_outputs + l] = init_weight();
@@ -203,9 +203,9 @@ void initialization(struct network *net)
 void update_weights_and_biases(struct network *net)
 {
     // Weights and biases between Input and Hidden layers
-    for (int i = 0; i < net->number_of_inputs; i++)
+    for (size_t i = 0; i < net->number_of_inputs; i++)
     {
-        for (int j = 0; j < net->number_of_hidden_nodes; j++)
+        for (size_t j = 0; j < net->number_of_hidden_nodes; j++)
         {
             net->hidden_weights[i * net->number_of_hidden_nodes + j] +=
                 net->eta * net->input_layer[i] * net->delta_hidden[j];
@@ -214,9 +214,9 @@ void update_weights_and_biases(struct network *net)
     }
 
     // Weights between Hidden and Ouput layers
-    for (int o = 0; o < net->number_of_outputs; o++)
+    for (size_t o = 0; o < net->number_of_outputs; o++)
     {
-        for (int h = 0; h < net->number_of_hidden_nodes; h++)
+        for (size_t h = 0; h < net->number_of_hidden_nodes; h++)
         {
             net->output_weights[h * net->number_of_outputs + o] +=
                 net->eta * net->delta_output[o] * net->hidden_layer[h]

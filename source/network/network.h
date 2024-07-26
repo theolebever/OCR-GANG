@@ -11,9 +11,9 @@
 
 struct network
 {
-    int number_of_inputs;
-    int number_of_hidden_nodes;
-    int number_of_outputs;
+    size_t number_of_inputs;
+    size_t number_of_hidden_nodes;
+    size_t number_of_outputs;
     double *input_layer;
 
     double *hidden_layer;

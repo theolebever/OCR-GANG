@@ -28,6 +28,7 @@ void print_usage() {
 
 int main(int argc, char **argv) {
     if (argc < 2) {
+        prepare_training();
         init_gui(argc, argv);
         return 0;
     }

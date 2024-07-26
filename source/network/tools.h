@@ -11,7 +11,7 @@ float expo(float x);
 double init_weight();
 
 int file_exists(const char *filename);
-int fileempty(const char *filename);
+int file_empty(const char *filename);
 
 void save_network(const char *filename, struct network *network);
 
@@ -19,19 +19,17 @@ void load_network(const char *filename, struct network *network);
 
 void shuffle(int *array, size_t n);
 
-char RetrieveChar(size_t val);
+char retrieve_char(size_t val);
 
-size_t IndexAnswer(struct network *net);
+size_t index_answer(struct network *net);
 
-void ExpectedOutput(struct network *network, char c);
+void expected_output(struct network *network, char c);
 
-size_t ExpectedPos(char c);
+size_t expected_pos(char c);
 
 char *update_path(const char *filepath, size_t len, char c, size_t index);
 
-void PrintState(char expected, char obtained);
-
-void InputFromTXT(char *filepath, struct network *net);
+void input_from_txt(char *filepath, struct network *net);
 
 void prepare_training();
 
