@@ -2,6 +2,13 @@
 #define NN_H_
 
 #include <stddef.h>
+#include <stdbool.h>
+
+#define BATCH_SIZE 32
+#define MAX_EPOCHS 2500
+#define EARLY_STOPPING_WINDOW 10
+#define EARLY_STOPPING_THRESHOLD 0.0001
+
 struct network
 {
     int number_of_inputs;
@@ -26,7 +33,7 @@ struct network
     double *goal;
 };
 
-struct network *InitializeNetwork(double i, double h, double o, char *filepath);
+struct network *initialize_network(double i, double h, double o, const char *filepath);
 
 void initialization(struct network *net);
 
@@ -34,8 +41,16 @@ void forward_pass(struct network *net);
 
 void back_propagation(struct network *net);
 
-void updateweightsetbiases(struct network *net);
+void update_weights_and_biases(struct network *net);
 
-int InputImage(struct network *net, size_t index, int ***chars_matrix);
+int input_image(struct network *net, size_t index, int ***chars_matrix);
+
+void free_network(struct network *net);
+
+void adaptive_learning_rate(struct network *net);
+
+bool early_stopping(double *errors, int window_size, double threshold);
+
+void mini_batch_training(struct network *net, int ***chars_matrix, int total_samples);
 
 #endif

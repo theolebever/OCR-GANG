@@ -87,11 +87,11 @@ void open_image(GtkButton *button, GtkLabel *text_label)
     gtk_widget_destroy(dialog);
 }
 
-int TrainNeuralNetwork()
+int train_neural_network()
 {
-    PrepareTraining();
+    prepare_training();
     struct network *network =
-        InitializeNetwork(28 * 28, 20, 52, "source/OCR/ocrwb.txt");
+        initialize_network(28 * 28, 20, 52, "source/OCR/ocrwb.txt");
     char *filepath = "img/training/maj/A0.txt\0";
     char expected_result[52] = { 'A', 'a', 'B', 'b', 'C', 'c', 'D', 'd', 'E',
                                  'e', 'F', 'f', 'G', 'g', 'H', 'h', 'I', 'i',
@@ -109,14 +109,14 @@ int TrainNeuralNetwork()
             {
                 step++;
                 progressBar(step, nb * 52 * 4);
-                filepath = updatepath(filepath, (size_t)strlen(filepath),
+                filepath = update_path(filepath, (size_t)strlen(filepath),
                                       expected_result[i], index);
                 ExpectedOutput(network, expected_result[i]);
                 InputFromTXT(filepath, network);
                 forward_pass(network);
                 // PrintState(expected_result[i],RetrieveChar(IndexAnswer(network)));
                 back_propagation(network);
-                updateweightsetbiases(network);
+                update_weights_and_biases(network);
             }
         }
     }
@@ -131,7 +131,7 @@ int OCR(GtkButton *button, GtkTextBuffer *buffer)
 {
     UNUSED(button);
     struct network *network =
-        InitializeNetwork(28 * 28, 20, 52, "source/OCR/ocrwb.txt");
+        initialize_network(28 * 28, 20, 52, "source/OCR/ocrwb.txt");
     init_sdl();
     SDL_Surface *image = load__image((char *)filename);
     image = black_and_white(image);
@@ -154,7 +154,7 @@ int OCR(GtkButton *button, GtkTextBuffer *buffer)
 
     for (size_t index = 0; index < (size_t)chars_count; index++)
     {
-        int is_espace = InputImage(network, index, &chars_matrix);
+        int is_espace = input_image(network, index, &chars_matrix);
         if (!is_espace)
         {
             forward_pass(network);
@@ -174,7 +174,7 @@ int OCR(GtkButton *button, GtkTextBuffer *buffer)
     return EXIT_SUCCESS;
 }
 
-void InitGUI(int argc, char *argv[])
+void init_gui(int argc, char *argv[])
 {
     // Init variables
     GtkWidget *main_window;

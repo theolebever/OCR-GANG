@@ -175,7 +175,7 @@ Your text will appear here</property>
                     <property name="visible">True</property>
                     <property name="can_focus">True</property>
                     <property name="receives_default">True</property>
-                    <signal name="clicked" handler="TrainNeuralNetwork" swapped="no"/>
+                    <signal name="clicked" handler="train_neural_network" swapped="no"/>
                   </object>
                   <packing>
                     <property name="expand">False</property>

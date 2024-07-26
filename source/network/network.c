@@ -2,14 +2,133 @@
 // operating the neural network Used for tweaking the weigth of each node in the
 // neural network
 #include "network.h"
-
 #include <err.h>
 #include <stdio.h>
 #include <stdlib.h>
-
+#include <math.h>
+#include <immintrin.h>
+#include <stdbool.h>
 #include "tools.h"
 
-struct network *InitializeNetwork(double i, double h, double o, char *filepath)
+#define INITIAL_ETA 0.1f
+#define INITIAL_ALPHA 0.7f
+#define BATCH_SIZE 32
+#define LEARNING_RATE_DECAY 0.01
+#define EARLY_STOPPING_WINDOW 10
+#define EARLY_STOPPING_THRESHOLD 0.0001
+
+
+// Standard matrix multiplication
+void matrix_multiply(double* A, double* B, double* C, int m, int n, int k) {
+    for (int i = 0; i < m; i++) {
+        for (int j = 0; j < n; j++) {
+            C[i * n + j] = 0;
+            for (int p = 0; p < k; p++) {
+                C[i * n + j] += A[i * k + p] * B[p * n + j];
+            }
+        }
+    }
+}
+
+// ReLU activation function
+double relu(double x) {
+    return x > 0 ? x : 0;
+}
+
+double drelu(double x) {
+    return x > 0 ? 1 : 0;
+}
+
+// Adaptive learning rate
+void adaptive_learning_rate(struct network *net) {
+    static int epoch = 0;
+    net->eta = INITIAL_ETA / (1 + LEARNING_RATE_DECAY * epoch);
+    epoch++;
+}
+
+// Early stopping
+bool early_stopping(double* errors, int window_size, double threshold) {
+    if (window_size < 2) return false;
+    
+    double sum = 0;
+    for (int i = 1; i < window_size; i++) {
+        sum += fabs(errors[i] - errors[i-1]);
+    }
+    
+    return (sum / (window_size - 1)) < threshold;
+}
+
+// Modified forward pass using ReLU
+void forward_pass(struct network *net) {
+    // Hidden layer
+    matrix_multiply(net->input_layer, net->hidden_weights, net->hidden_layer, 
+                    1, net->number_of_hidden_nodes, net->number_of_inputs);
+    for (size_t j = 0; j < net->number_of_hidden_nodes; j++) {
+        net->hidden_layer[j] = relu(net->hidden_layer[j] + net->hidden_layer_bias[j]);
+    }
+
+    // Output layer
+    matrix_multiply(net->hidden_layer, net->output_weights, net->output_layer, 
+                    1, net->number_of_outputs, net->number_of_hidden_nodes);
+    for (size_t j = 0; j < net->number_of_outputs; j++) {
+        net->output_layer[j] = relu(net->output_layer[j] + net->output_layer_bias[j]);
+    }
+}
+
+// Modified back propagation using ReLU derivative
+void back_propagation(struct network *net) {
+    for (size_t o = 0; o < net->number_of_outputs; o++) {
+        net->delta_output[o] = (net->goal[o] - net->output_layer[o]) * drelu(net->output_layer[o]);
+    }
+    for (size_t h = 0; h < net->number_of_hidden_nodes; h++) {
+        double sum = 0.0;
+        for (size_t o = 0; o < net->number_of_outputs; o++) {
+            sum += net->output_weights[h * net->number_of_outputs + o] * net->delta_output[o];
+        }
+        net->delta_hidden[h] = sum * drelu(net->hidden_layer[h]);
+    }
+}
+
+// Mini-batch training
+void mini_batch_training(struct network *net, int ***chars_matrix, int total_samples) {
+    double errors[EARLY_STOPPING_WINDOW] = {0};
+    int error_index = 0;
+
+    for (int epoch = 0; epoch < 1000; epoch++) {  // Arbitrary number of epochs
+        double epoch_error = 0;
+
+        for (int i = 0; i < total_samples; i += BATCH_SIZE) {
+            // Process batch
+            for (int j = 0; j < BATCH_SIZE && (i + j) < total_samples; j++) {
+                input_image(net, i + j, chars_matrix);
+                forward_pass(net);
+                back_propagation(net);
+                
+                // Calculate error
+                for (size_t o = 0; o < net->number_of_outputs; o++) {
+                    epoch_error += pow(net->goal[o] - net->output_layer[o], 2);
+                }
+            }
+            
+            // Update weights after processing the batch
+            update_weights_and_biases(net);
+        }
+        
+        // Adaptive learning rate
+        adaptive_learning_rate(net);
+        
+        // Early stopping
+        errors[error_index] = epoch_error / total_samples;
+        error_index = (error_index + 1) % EARLY_STOPPING_WINDOW;
+        
+        if (early_stopping(errors, EARLY_STOPPING_WINDOW, EARLY_STOPPING_THRESHOLD)) {
+            printf("Early stopping at epoch %d\n", epoch);
+            break;
+        }
+    }
+}
+
+struct network *initialize_network(double i, double h, double o, const char *filepath)
 {
     struct network *network = malloc(sizeof(struct network));
     if (network == NULL)
@@ -46,8 +165,8 @@ struct network *InitializeNetwork(double i, double h, double o, char *filepath)
                sizeof(double));
 
     network->goal = calloc(network->number_of_outputs, sizeof(double));
-    network->eta = 0.5f;
-    network->alpha = 0.9f;
+    network->eta = INITIAL_ETA;
+    network->alpha = INITIAL_ALPHA;
 
     if (!fileempty(filepath))
     {
@@ -81,57 +200,7 @@ void initialization(struct network *net)
     }
 }
 
-void forward_pass(struct network *net)
-{
-    /*DONE : Foward pass = actually input some value into
-    the neural network and see what we obtain out of it*/
-
-    for (int j = 0; j < net->number_of_hidden_nodes; j++)
-    {
-        double activation = net->hidden_layer_bias[j];
-        for (int k = 0; k < net->number_of_inputs; k++)
-        {
-            activation += net->input_layer[k]
-                * net->hidden_weights[k * net->number_of_hidden_nodes + j];
-        }
-        net->hidden_layer[j] = sigmoid(activation);
-    }
-    for (int j = 0; j < net->number_of_outputs; j++)
-    {
-        double activation = net->output_layer_bias[j];
-        for (int k = 0; k < net->number_of_hidden_nodes; k++)
-        {
-            activation += net->hidden_layer[k]
-                * net->output_weights[k * net->number_of_outputs + j];
-        }
-        net->output_layer[j] = sigmoid(activation);
-    }
-}
-
-void back_propagation(struct network *net)
-{
-    /*DONE : Back propagation = update the weight according to
-    what we should have obtained out of the neural network*/
-
-    for (int o = 0; o < net->number_of_outputs; o++)
-    {
-        net->delta_output[o] = (net->goal[o] - net->output_layer[o])
-            * dSigmoid(net->output_layer[o]);
-    }
-    double sum;
-    for (int h = 0; h < net->number_of_hidden_nodes; h++)
-    {
-        sum = 0.0;
-        for (int o = 0; o < net->number_of_outputs; o++)
-        {
-            sum += net->output_weights[h * net->number_of_outputs + o]
-                * net->delta_output[o];
-        }
-        net->delta_hidden[h] = sum * dSigmoid(net->hidden_layer[h]);
-    }
-}
-
-void updateweightsetbiases(struct network *net)
+void update_weights_and_biases(struct network *net)
 {
     // Weights and biases between Input and Hidden layers
     for (int i = 0; i < net->number_of_inputs; i++)
@@ -161,7 +230,25 @@ void updateweightsetbiases(struct network *net)
     }
 }
 
-int InputImage(struct network *net, size_t index, int ***chars_matrix)
+
+void free_network(struct network *net)
+{
+    free(net->input_layer);
+    free(net->hidden_layer);
+    free(net->delta_hidden);
+    free(net->hidden_layer_bias);
+    free(net->hidden_weights);
+    free(net->delta_hidden_weights);
+    free(net->output_layer);
+    free(net->delta_output);
+    free(net->output_layer_bias);
+    free(net->output_weights);
+    free(net->delta_output_weights);
+    free(net->goal);
+    free(net);
+}
+
+int input_image(struct network *net, size_t index, int ***chars_matrix)
 {
     int is_espace = 1;
     for (size_t i = 0; i < 784; i++)

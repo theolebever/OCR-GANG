@@ -26,8 +26,8 @@ void save_text(GtkButton *button, GtkTextBuffer *buffer);
 void load_image(GtkButton *button, GtkImage *image);
 void open_image(GtkButton *button, GtkLabel *text_label);
 char *UpdatePath(char *filepath, size_t len, char c);
-int TrainNeuralNetwork();
+int train_neural_network();
 int OCR(GtkButton *button, GtkTextBuffer *buffer);
-void InitGUI(int argc, char *argv[]);
+void init_gui(int argc, char *argv[]);
 
 #endif

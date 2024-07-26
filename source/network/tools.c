@@ -59,7 +59,7 @@ double init_weight()
     return ((double)rand()) / ((double)RAND_MAX + 1);
 }
 
-int cfileexists(const char *filename)
+int file_exists(const char *filename)
 {
     /* try to open file to read */
     FILE *file;
@@ -244,32 +244,32 @@ void ExpectedOutput(struct network *network, char c)
         network->goal[((int)(c)-97) + 26] = 1;
 }
 
-char *updatepath(char *filepath, size_t len, char c, size_t index)
+char *update_path(const char *filepath, size_t len, char c, size_t index)
 {
-    char *newpath = malloc(len * sizeof(char));
-    for (size_t i = 0; i < len; i++)
-    {
-        if (i != 17)
-        {
-            newpath[i] = filepath[i];
+    // Allocate one extra byte for the null terminator
+    char *newpath = malloc((len + 1) * sizeof(char));
+    if (newpath == NULL) {
+        fprintf(stderr, "Memory allocation failed\n");
+        exit(1);
+    }
+
+    // Copy the original path
+    strncpy(newpath, filepath, len);
+    newpath[len] = '\0';  // Ensure null-termination
+
+    // Update specific positions
+    if (len > 17) newpath[17] = c;
+    if (len > 15) {
+        if (c <= 'Z') {
+            newpath[14] = 'a';
+            newpath[15] = 'j';
+        } else {
+            newpath[14] = 'i';
+            newpath[15] = 'n';
         }
-        else
-        {
-            newpath[i] = c;
-        }
     }
-    if (c <= 'Z')
-    {
-        newpath[14] = 'a';
-        newpath[15] = 'j';
-    }
-    else
-    {
-        newpath[14] = 'i';
-        newpath[15] = 'n';
-    }
-    newpath[18] = (char)(index + 48);
-    newpath[23] = '\0';
+    if (len > 18) newpath[18] = (char)(index + 48);
+
     return newpath;
 }
 
@@ -301,11 +301,11 @@ void InputFromTXT(char *filepath, struct network *net)
     fclose(file);
 }
 
-void PrepareTraining()
+void prepare_training()
 {
     init_sdl();
-    char *filepath = "img/training/maj/A0.png\0";
-    char *filematrix = "img/training/maj/A0.txt\0";
+    const char *base_filepath = "img/training/maj/A0.png";
+    const char *base_filematrix = "img/training/maj/A0.txt";
     char expected_result[52] = { 'A', 'a', 'B', 'b', 'C', 'c', 'D', 'd', 'E',
                                  'e', 'F', 'f', 'G', 'g', 'H', 'h', 'I', 'i',
                                  'J', 'j', 'K', 'k', 'L', 'I', 'M', 'm', 'N',
@@ -313,16 +313,16 @@ void PrepareTraining()
                                  'S', 's', 'I', 't', 'U', 'u', 'V', 'v', 'W',
                                  'w', 'X', 'x', 'Y', 'y', 'Z', 'z' };
     int **chars_matrix = NULL;
-
     int nb = 52;
+
     for (size_t i = 0; i < (size_t)nb; i++)
     {
         for (size_t index = 0; index < 4; index++)
         {
-            filepath = updatepath(filepath, (size_t)strlen(filepath),
-                                  expected_result[i], index);
-            filematrix = updatepath(filematrix, (size_t)strlen(filepath),
-                                    expected_result[i], index);
+            char *filepath = update_path(base_filepath, strlen(base_filepath),
+                                         expected_result[i], index);
+            char *filematrix = update_path(base_filematrix, strlen(base_filematrix),
+                                           expected_result[i], index);
 
             SDL_Surface *image = load__image(filepath);
             image = black_and_white(image);
@@ -336,9 +336,26 @@ void PrepareTraining()
             {
                 SDL_FreeSurface(blocs[j]);
             }
+
             ImageToMatrix(chars, &chars_matrix, charslen, BlocCount);
             SaveMatrix(chars_matrix, filematrix);
+
+            // Free allocated memory
+            free(filepath);
+            free(filematrix);
+            free(chars);
+            free(blocs);
+            free(charslen);
+            SDL_FreeSurface(image);
         }
     }
-    free(chars_matrix);
+
+    // Free chars_matrix if it was allocated
+    if (chars_matrix != NULL) {
+        // Assuming you know the dimensions of chars_matrix
+        for (int i = 0; i < 28; i++) {
+            free(chars_matrix[i]);
+        }
+        free(chars_matrix);
+    }
 }

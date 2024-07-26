@@ -10,7 +10,7 @@ double dSigmoid(double x);
 float expo(float x);
 double init_weight();
 
-int cfileexists(const char *filename);
+int file_exists(const char *filename);
 int fileempty(const char *filename);
 
 void save_network(const char *filename, struct network *network);
@@ -27,12 +27,12 @@ void ExpectedOutput(struct network *network, char c);
 
 size_t ExpectedPos(char c);
 
-char *updatepath(char *filepath, size_t len, char c, size_t index);
+char *update_path(const char *filepath, size_t len, char c, size_t index);
 
 void PrintState(char expected, char obtained);
 
 void InputFromTXT(char *filepath, struct network *net);
 
-void PrepareTraining();
+void prepare_training();
 
 #endif
