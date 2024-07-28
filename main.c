@@ -45,9 +45,7 @@ int main(int argc, char **argv)
     else if (strcmp(argv[1], "--train") == 0)
     {
         prepare_training();
-
-        // Préparer les données d'entrainement
-        double input[INPUT_HEIGHT][INPUT_WIDTH] = {{0}};
+        Network *cnn = create_ocr_network();
 
         char *filematrix = "img/training/maj/A0.txt\0";
         char expected_result[52] = {'A', 'a', 'B', 'b', 'C', 'c', 'D', 'd', 'E',
@@ -56,13 +54,8 @@ int main(int argc, char **argv)
                                     'n', 'O', 'o', 'P', 'p', 'Q', 'q', 'R', 'r',
                                     'S', 's', 'I', 't', 'U', 'u', 'V', 'v', 'W',
                                     'w', 'X', 'x', 'Y', 'y', 'Z', 'z'};
-        for (size_t index = 0; index < 4; index++)
-        {
-            char *newpath = update_path(filematrix, (size_t)strlen(filematrix),
-                                        expected_result[0], index);
-            read_binary_image(filematrix, input);
-            free(newpath);
-        }
+        train(cnn, filematrix, expected_result, 4, 1000, 0.001);
+        free_network_cnn(cnn);
     }
     else
     {

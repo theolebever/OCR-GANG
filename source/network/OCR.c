@@ -5,10 +5,11 @@
 
 #include "OCR.h"
 #include "tools.h"
+#include "early_stop.h"
 
 Network *create_ocr_network()
 {
-    Network *net = create_network(7); // 7 layers total
+    Network *net = create_network(6); // 7 layers total
 
     // Assuming 28x28 binary input
     add_conv_layer(net, 0, INPUT_HEIGHT, INPUT_WIDTH, 1, 3, 3, 32); // 32 3x3 filters
@@ -43,6 +44,11 @@ void add_conv_layer(Network *net, int layer_index, int in_w, int in_h, int in_d,
     conv->base.input->height = in_h;
     conv->base.input->depth = in_d;
     conv->base.input->data = (float *)calloc(in_w * in_h * in_d, sizeof(float));
+    if (!conv->base.input->data)
+    {
+        perror("Memory allocation failed for input volume");
+        exit(EXIT_FAILURE);
+    }
 
     // Initialize output volume
     int out_w = in_w - filter_w + 1;
@@ -52,6 +58,11 @@ void add_conv_layer(Network *net, int layer_index, int in_w, int in_h, int in_d,
     conv->base.output->height = out_h;
     conv->base.output->depth = num_filters;
     conv->base.output->data = (float *)calloc(out_w * out_h * num_filters, sizeof(float));
+    if (!conv->base.output->data)
+    {
+        perror("Memory allocation failed for output volume");
+        exit(EXIT_FAILURE);
+    }
 
     // Set layer properties
     conv->filter_width = filter_w;
@@ -61,14 +72,34 @@ void add_conv_layer(Network *net, int layer_index, int in_w, int in_h, int in_d,
     // Allocate and initialize weights
     int weights_size = filter_w * filter_h * in_d * num_filters;
     conv->weights = (float *)malloc(weights_size * sizeof(float));
-    xavier_init(conv->weights, filter_w * filter_h * in_d, out_w * out_h);
+    if (!conv->weights)
+    {
+        perror("Memory allocation failed for weights");
+        exit(EXIT_FAILURE);
+    }
+    xavier_init(conv->weights, filter_w * filter_h, in_d * num_filters);
 
     // Allocate and initialize biases
     conv->biases = (float *)calloc(num_filters, sizeof(float));
+    if (!conv->biases)
+    {
+        perror("Memory allocation failed for biases");
+        exit(EXIT_FAILURE);
+    }
 
     // Allocate memory for gradients
     conv->weight_gradients = (float *)calloc(weights_size, sizeof(float));
+    if (!conv->weight_gradients)
+    {
+        perror("Memory allocation failed for weight_gradients");
+        exit(EXIT_FAILURE);
+    }
     conv->bias_gradients = (float *)calloc(num_filters, sizeof(float));
+    if (!conv->bias_gradients)
+    {
+        perror("Memory allocation failed for bias_gradients");
+        exit(EXIT_FAILURE);
+    }
 
     // Set forward and backward functions
     conv->base.forward = conv_forward;
@@ -90,9 +121,28 @@ void add_pool_layer(Network *net, int layer_index, int in_w, int in_h, int in_d,
     pool->pool_height = pool_h;
     pool->stride = stride;
 
+    pool->base.input->width = in_w;
+    pool->base.input->height = in_h;
+    pool->base.input->depth = in_d;
+    pool->base.input->data = (float *)calloc(in_w * in_h * in_d, sizeof(float));
+
     int output_w = (in_w - pool_w) / stride + 1;
     int output_h = (in_h - pool_h) / stride + 1;
+    pool->base.output->width = output_w;
+    pool->base.output->height = output_h;
+    pool->base.output->depth = in_d;
+    pool->base.output->data = (float *)calloc(output_w * output_h * in_d, sizeof(float));
+
     pool->max_indices = (int *)malloc(output_w * output_h * in_d * sizeof(int));
+
+    if (!pool->base.input->data || !pool->base.output->data || !pool->max_indices)
+    {
+        perror("Memory allocation failed in add_pool_layer");
+        exit(EXIT_FAILURE);
+    }
+
+    pool->base.forward = (void (*)(Layer *, Volume *))pool_forward;
+    pool->base.backward = (void (*)(Layer *, float *))pool_backward;
 
     net->layers[layer_index] = (Layer *)pool;
 }
@@ -142,28 +192,70 @@ void add_fc_layer(Network *net, int layer_index, int input_size, int output_size
     net->layers[layer_index] = (Layer *)fc;
 }
 
-// Function to free network memory
 void free_network_cnn(Network *net)
 {
+    if (net == NULL)
+    {
+        return;
+    }
+
+    // First, free all layer-specific resources
     for (int i = 0; i < net->num_layers; i++)
     {
-        // Free layer-specific memory
+        if (net->layers[i] == NULL)
+        {
+            continue;
+        }
+
         switch (net->layers[i]->type)
         {
         case LAYER_CONV:
-            // Free ConvLayer specific memory
+        {
+            ConvLayer *conv = (ConvLayer *)net->layers[i];
+            free(conv->weights);
+            free(conv->biases);
+            free(conv->weight_gradients);
+            free(conv->bias_gradients);
             break;
+        }
         case LAYER_POOL:
-            // Free PoolLayer specific memory
+        {
+            PoolLayer *pool = (PoolLayer *)net->layers[i];
+            free(pool->max_indices);
             break;
+        }
         case LAYER_FC:
-            // Free FCLayer specific memory
+        {
+            FCLayer *fc = (FCLayer *)net->layers[i];
+            free(fc->weights);
+            free(fc->biases);
+            free(fc->weight_gradients);
+            free(fc->bias_gradients);
             break;
+        }
         default:
             break;
         }
-        free(net->layers[i]->input);
-        free(net->layers[i]->output);
+    }
+
+    // Now, free input and output volumes
+    for (int i = 0; i < net->num_layers; i++)
+    {
+        if (net->layers[i]->input && (i == 0 || net->layers[i]->input != net->layers[i - 1]->output))
+        {
+            free(net->layers[i]->input->data);
+            free(net->layers[i]->input);
+        }
+        if (net->layers[i]->output)
+        {
+            free(net->layers[i]->output->data);
+            free(net->layers[i]->output);
+        }
+    }
+
+    // Finally, free the layers themselves and the network structure
+    for (int i = 0; i < net->num_layers; i++)
+    {
         free(net->layers[i]);
     }
     free(net->layers);
@@ -259,8 +351,8 @@ void conv_backward(Layer *layer, float *upstream_gradient)
 
 void pool_forward(PoolLayer *layer, Volume *input)
 {
-    int out_w = (input->width - layer->pool_width) / layer->stride + 1;
-    int out_h = (input->height - layer->pool_height) / layer->stride + 1;
+    int out_w = layer->base.output->width;
+    int out_h = layer->base.output->height;
 
     for (int d = 0; d < input->depth; d++)
     {
@@ -276,11 +368,14 @@ void pool_forward(PoolLayer *layer, Volume *input)
                     {
                         int ix = x * layer->stride + px;
                         int iy = y * layer->stride + py;
-                        float val = input->data[(iy * input->width + ix) * input->depth + d];
-                        if (val > max_val)
-                        {
-                            max_val = val;
-                            max_idx = (iy * input->width + ix) * input->depth + d;
+                        if (ix < input->width && iy < input->height)
+                        { // Bounds check
+                            float val = input->data[(iy * input->width + ix) * input->depth + d];
+                            if (val > max_val)
+                            {
+                                max_val = val;
+                                max_idx = (iy * input->width + ix) * input->depth + d;
+                            }
                         }
                     }
                 }
@@ -339,6 +434,20 @@ void fc_backward(Layer *layer, float *upstream_gradient)
 {
     FCLayer *fc = (FCLayer *)layer;
 
+    // Ensure we have valid input and output
+    if (layer->input == NULL || layer->output == NULL || upstream_gradient == NULL)
+    {
+        fprintf(stderr, "Error: NULL input, output, or upstream_gradient in fc_backward\n");
+        return;
+    }
+
+    // Ensure input and output sizes are valid
+    if (fc->input_size <= 0 || fc->output_size <= 0)
+    {
+        fprintf(stderr, "Error: Invalid input or output size in fc_backward\n");
+        return;
+    }
+
     // Compute gradients for weights and biases
     for (int i = 0; i < fc->output_size; i++)
     {
@@ -354,6 +463,12 @@ void fc_backward(Layer *layer, float *upstream_gradient)
 
     // Compute gradients for inputs (to be passed to previous layer)
     float *input_gradients = calloc(fc->input_size, sizeof(float));
+    if (input_gradients == NULL)
+    {
+        fprintf(stderr, "Memory allocation failed in fc_backward\n");
+        return;
+    }
+
     for (int i = 0; i < fc->input_size; i++)
     {
         float sum = 0;
@@ -390,7 +505,7 @@ void forward_pass_ocr(Network *net, float *input)
             break;
         default:
             fprintf(stderr, "Unknown layer type\n");
-            exit(1);
+            exit(EXIT_FAILURE);
         }
 
         // Set input of next layer to output of current layer, if not last layer
@@ -403,11 +518,30 @@ void forward_pass_ocr(Network *net, float *input)
 
 void backward_pass(Network *net, float *target)
 {
+    // Determine the maximum size needed across all layers
+    size_t max_size = 0;
+    for (int i = 0; i < net->num_layers; i++)
+    {
+        size_t layer_size = net->layers[i]->input->width *
+                            net->layers[i]->input->height *
+                            net->layers[i]->input->depth;
+        if (layer_size > max_size)
+        {
+            max_size = layer_size;
+        }
+    }
+
+    // Allocate error with the maximum size
+    float *error = malloc(max_size * sizeof(float));
+    if (!error)
+    {
+        fprintf(stderr, "Failed to allocate memory for error in backward_pass\n");
+        return;
+    }
+
+    // Initialize error for the output layer
     int output_size = ((FCLayer *)net->layers[net->num_layers - 1])->output_size;
     float *output = net->layers[net->num_layers - 1]->output->data;
-
-    // Compute initial error (assuming cross-entropy loss for classification)
-    float *error = malloc(output_size * sizeof(float));
     for (int i = 0; i < output_size; i++)
     {
         error[i] = output[i] - target[i];
@@ -429,13 +563,17 @@ void backward_pass(Network *net, float *target)
             break;
         default:
             fprintf(stderr, "Unknown layer type in backward pass\n");
-            exit(1);
+            free(error);
+            return;
         }
 
         // Update error for next layer
         if (i > 0)
         {
-            memcpy(error, net->layers[i]->input->data, net->layers[i]->input->width * net->layers[i]->input->height * net->layers[i]->input->depth * sizeof(float));
+            size_t input_size = net->layers[i]->input->width *
+                                net->layers[i]->input->height *
+                                net->layers[i]->input->depth;
+            memcpy(error, net->layers[i]->input->data, input_size * sizeof(float));
         }
     }
 
@@ -490,17 +628,100 @@ void update_parameters(Network *net, float learning_rate)
     }
 }
 
-void train(Network *net, float **training_data, float **labels, int num_samples, int epochs, float learning_rate)
+float calculate_loss(Network *net, float *target)
 {
+    FCLayer *output_layer = (FCLayer *)net->layers[net->num_layers - 1];
+    float loss = 0;
+    for (int i = 0; i < output_layer->output_size; i++)
+    {
+        float diff = output_layer->base.output->data[i] - target[i];
+        loss += diff * diff;
+    }
+    return loss / (2 * output_layer->output_size);
+}
+
+void train(Network *net, const char *filematrix, char *expected_result, int num_samples_per_char, int epochs, float learning_rate)
+{
+    double *input = (double *)calloc(INPUT_HEIGHT * INPUT_WIDTH, sizeof(double));
+    float *target = (float *)calloc(26, sizeof(float)); // Assuming 26 output classes (A-Z)
+
+    // Initialize early stopping
+    EarlyStopping *es = init_early_stopping(net, 10); // patience of 10 epochs
+
     for (int epoch = 0; epoch < epochs; epoch++)
     {
-        for (int i = 0; i < num_samples; i++)
+        float total_loss = 0;
+        int total_samples = 0;
+
+        for (size_t i = 0; i < 52; i++)
+        { // Loop over all characters (A-Z, a-z)
+            char letter = expected_result[i];
+            target[(letter - 'A') % 26] = 1.0; // Set the target for current character
+
+            for (int j = 0; j < num_samples_per_char; j++)
+            { // Loop over samples for each character
+                char *newpath = update_path(filematrix, strlen(filematrix), letter, j);
+                read_binary_image(newpath, input);
+
+                forward_pass_ocr(net, (float *)input);
+                backward_pass(net, target);
+                update_parameters(net, learning_rate);
+
+                // Calculate loss
+                float loss = calculate_loss(net, target);
+                total_loss += loss;
+                total_samples++;
+
+                free(newpath);
+            }
+
+            target[(letter - 'A') % 26] = 0.0; // Reset the target for next character
+        }
+
+        // Calculate average loss for this epoch
+        float avg_loss = total_loss / total_samples;
+
+        // Check for early stopping
+        if (should_stop(es, avg_loss, net, epoch))
         {
-            forward_pass_ocr(net, training_data[i]);
-            backward_pass(net, labels[i]);
-            update_parameters(net, learning_rate);
+            break;
+        }
+
+        if (epoch % 100 == 0)
+        {
+            printf("Epoch %d, Average Loss: %f\n", epoch, avg_loss);
         }
     }
+
+    // Restore best parameters
+    int idx = 0;
+    for (int i = 0; i < net->num_layers; i++)
+    {
+        if (net->layers[i]->type == LAYER_CONV)
+        {
+            ConvLayer *conv = (ConvLayer *)net->layers[i];
+            int weights_size = conv->filter_width * conv->filter_height * conv->base.input->depth * conv->num_filters;
+            memcpy(conv->weights, es->best_params + idx, weights_size * sizeof(float));
+            idx += weights_size;
+            memcpy(conv->biases, es->best_params + idx, conv->num_filters * sizeof(float));
+            idx += conv->num_filters;
+        }
+        else if (net->layers[i]->type == LAYER_FC)
+        {
+            FCLayer *fc = (FCLayer *)net->layers[i];
+            int weights_size = fc->input_size * fc->output_size;
+            memcpy(fc->weights, es->best_params + idx, weights_size * sizeof(float));
+            idx += weights_size;
+            memcpy(fc->biases, es->best_params + idx, fc->output_size * sizeof(float));
+            idx += fc->output_size;
+        }
+    }
+
+    printf("Best model found at epoch %d with validation loss %f\n", es->best_epoch, es->best_val_loss);
+
+    free(input);
+    free(target);
+    free_early_stopping(es);
 }
 
 // Prediction Function

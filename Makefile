@@ -12,6 +12,7 @@ SRC= main.c \
 	source/network/tools.c \
 	source/network/OCR.c \
 	source/network/XOR.c \
+	source/network/early_stop.c\
 	source/GUI/gui.c 
 
 OBJ= $(SRC:.c=.o)

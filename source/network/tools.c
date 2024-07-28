@@ -125,17 +125,19 @@ void load_network(const char *filename, struct fnn *network)
     {
         for (size_t o = 0; o < network->number_of_hidden_nodes; o++)
         {
-            fscanf(input, "%lf %lf\n", &network->hidden_layer_bias[o],
-                   &network->hidden_weights[k * network->number_of_hidden_nodes + o]);
+            int nb_char = fscanf(input, "%lf %lf\n", &network->hidden_layer_bias[o],
+                                 &network->hidden_weights[k * network->number_of_hidden_nodes + o]);
+            (void)nb_char;
         }
     }
     for (size_t i = 0; i < network->number_of_hidden_nodes; i++)
     {
         for (size_t a = 0; a < network->number_of_outputs; a++)
         {
-            fscanf(
+            int nb_char = fscanf(
                 input, "%lf %lf\n", &network->output_layer_bias[a],
                 &network->output_weights[i * network->number_of_outputs + a]);
+            (void)nb_char;
         }
     }
     fclose(input);
@@ -204,14 +206,16 @@ void input_from_txt(char *filepath, struct fnn *net)
     {
         for (size_t j = 0; j < size; j++)
         {
-            fscanf(file, "%lf", &net->input_layer[i * size + j]);
+            int nb = fscanf(file, "%lf", &net->input_layer[i * size + j]);
+            (void)nb;
         }
-        fscanf(file, "\n");
+        int nb = fscanf(file, "\n");
+        (void)nb;
     }
     fclose(file);
 }
 
-void read_binary_image(const char *filepath, double arr[28][28])
+void read_binary_image(const char *filepath, double *arr)
 {
     FILE *file = fopen(filepath, "r");
     if (file == NULL)
@@ -223,9 +227,11 @@ void read_binary_image(const char *filepath, double arr[28][28])
     {
         for (size_t j = 0; j < size; j++)
         {
-            fscanf(file, "%lf ", &arr[i][j]);
+            int nb = fscanf(file, "%lf ", &arr[i * size + j]);
+            (void)nb;
         }
-        fscanf(file, "\n");
+        int nb = fscanf(file, "\n");
+        (void)nb;
     }
     fclose(file);
 }

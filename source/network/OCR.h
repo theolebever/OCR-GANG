@@ -85,7 +85,7 @@ void fc_backward(Layer *layer, float *upstream_gradient);
 void forward_pass_ocr(Network *net, float *input);
 void backward_pass(Network *net, float *target);
 void update_parameters(Network *net, float learning_rate);
-void train(Network *net, float **training_data, float **labels, int num_samples, int epochs, float learning_rate);
+void train(Network *net, const char *filematrix, char *expected_result, int num_samples_per_char, int epochs, float learning_rate);
 int predict(Network *net, float *input);
 
 #endif

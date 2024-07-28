@@ -25,7 +25,7 @@ void free_chars_matrix(int **chars_matrix, int chars_count);
 void free_chars(SDL_Surface ***chars, int *charslen, int BlocCount);
 void free_surfaces(SDL_Surface **surfaces, int count);
 int input_image(float *input_layer, const int *image_data, size_t image_size);
-void read_binary_image(const char *filepath, double arr[28][28]);
+void read_binary_image(const char *filepath, double *arr);
 void xavier_init(float *weights, int fan_in, int fan_out);
 
 #endif
