@@ -1,63 +1,61 @@
-#include "../network/tools.h"
-
 #include <stdio.h>
+#include <math.h>
 
-#include "../network/network.h"
+#include "../network/tools.h"
 #include "../process/process.h"
 #include "../sdl/our_sdl.h"
 #include "../segmentation/segmentation.h"
 #include "SDL/SDL.h"
 #include "SDL/SDL_image.h"
+#include "XOR.h"
+#include "OCR.h"
 
 #define KRED "\x1B[31m"
 #define KWHT "\x1B[37m"
 #define KGRN "\x1B[32m"
 
-void progressBar(int step, int nb)
-{
-    printf("\e[?25l");
-    int percent = (step * 100) / nb;
-    const int pwidth = 72;
-    int pos = (step * pwidth) / nb;
-    printf("[");
-    for (int i = 0; i < pos; i++)
-    {
-        printf("%c", '=');
-    }
-    printf("%*c ", pwidth - pos + 1, ']');
-    printf(" %3d%%\r", percent);
-}
+/* ##################################################
+                ACTIVATION FUNCTIONS
+   ################################################## */
 
-float expo(float x) // Self explanitory, just in case cannot use math.h
+float random_float()
 {
-    float sum = 1.0f;
-    int n = 150; // Arbitrary
-    for (int i = n - 1; i > 0; --i)
-    {
-        sum = 1 + x * sum / i; // Compute by using Taylor's formula
-    }
-    return sum;
+    return ((float)rand() / (float)RAND_MAX) * 2 - 1;
 }
-
-// Activation function and its derivative
 
 double sigmoid(double x)
 {
-    return 1 / (1 + expo(-x));
-    // Will be used to adjust the activation of hiddenlayer and outputlayer
-    // nodes
+    return 1.0 / (1.0 + exp(-x));
 }
-double dSigmoid(double x)
+
+double sigmoid_derivative(double x)
 {
-    return x * (1 - x);
-    // Will be used to compute the weigth of hiddenlayer and outputlayer nodes
+    float s = sigmoid(x);
+    return s * (1 - s);
+}
+
+/* ##################################################
+                INIT FUNCTIONS
+   ################################################## */
+
+void xavier_init(float *weights, int fan_in, int fan_out)
+{
+    float scale = sqrt(2.0 / (fan_in + fan_out));
+    for (int i = 0; i < fan_in * fan_out; i++)
+    {
+        weights[i] = random_float() * scale;
+    }
 }
 
 // Init all weights and biases between 0.0 and 1.0
 double init_weight()
 {
-    return ((double)rand()) / ((double)RAND_MAX + 1);
+    return ((float)rand() / (float)RAND_MAX) * 2 - 1;
 }
+
+/* ##################################################
+                FILE HANDLING FUNCTIONS
+   ################################################## */
 
 int file_exists(const char *filename)
 {
@@ -75,7 +73,7 @@ int file_exists(const char *filename)
 
 int file_empty(const char *filename)
 {
-    
+
     FILE *fptr;
     fptr = fopen(filename, "r");
     if (fptr == NULL)
@@ -87,7 +85,11 @@ int file_empty(const char *filename)
     return !(len > 0);
 }
 
-void save_network(const char *filename, struct network *network)
+/* ##################################################
+                XOR NETWORK FUNCTIONS
+   ################################################## */
+
+void save_network(const char *filename, struct fnn *network)
 {
     if (!file_exists(filename))
     {
@@ -101,8 +103,7 @@ void save_network(const char *filename, struct network *network)
         for (size_t o = 0; o < network->number_of_hidden_nodes; o++)
         {
             fprintf(output, "%lf %lf\n", network->hidden_layer_bias[o],
-                    network->hidden_weights[k * network->number_of_hidden_nodes
-                                            + o]);
+                    network->hidden_weights[k * network->number_of_hidden_nodes + o]);
         }
     }
     for (size_t i = 0; i < network->number_of_hidden_nodes; i++)
@@ -117,7 +118,7 @@ void save_network(const char *filename, struct network *network)
     fclose(output);
 }
 
-void load_network(const char *filename, struct network *network)
+void load_network(const char *filename, struct fnn *network)
 {
     FILE *input = fopen(filename, "r");
     for (size_t k = 0; k < network->number_of_inputs; k++)
@@ -125,8 +126,7 @@ void load_network(const char *filename, struct network *network)
         for (size_t o = 0; o < network->number_of_hidden_nodes; o++)
         {
             fscanf(input, "%lf %lf\n", &network->hidden_layer_bias[o],
-                   &network->hidden_weights[k * network->number_of_hidden_nodes
-                                            + o]);
+                   &network->hidden_weights[k * network->number_of_hidden_nodes + o]);
         }
     }
     for (size_t i = 0; i < network->number_of_hidden_nodes; i++)
@@ -140,6 +140,10 @@ void load_network(const char *filename, struct network *network)
     }
     fclose(input);
 }
+
+/* ##################################################
+                TRAINING NETWORK FUNCTIONS
+   ################################################## */
 
 void shuffle(int *array, size_t n)
 {
@@ -155,126 +159,40 @@ void shuffle(int *array, size_t n)
     }
 }
 
-size_t index_answer(struct network *net)
-{
-    size_t index = 0;
-    for (size_t i = 1; i < (size_t)net->number_of_outputs; i++)
-    {
-        if (net->output_layer[i] > net->output_layer[index])
-        {
-            index = i;
-        }
-    }
-    return index;
-}
-char retrieve_char(size_t val)
-{
-    char c;
-
-    if (val <= 25)
-    {
-        c = val + 65;
-    }
-    else if (val > 25 && val <= 51)
-    {
-        c = (val + 97 - 26);
-    }
-    else if (val > 51 && val <= 61)
-    {
-        c = val + 48 - 52;
-    }
-    else
-    {
-        switch (val)
-        {
-        case 62:
-            c = ';';
-            break;
-        case 63:
-            c = '\'';
-            break;
-        case 64:
-            c = ':';
-            break;
-        case 65:
-            c = '-';
-            break;
-        case 66:
-            c = '.';
-            break;
-        case 67:
-            c = '!';
-            break;
-        case 68:
-            c = '?';
-            break;
-        case 69:
-            c = '(';
-            break;
-        case 70:
-            c = '\"';
-            break;
-        case 71:
-            c = ')';
-            break;
-        default:
-            exit(1);
-            break;
-        }
-    }
-    return c;
-}
-
-size_t expected_pos(char c)
-{
-    size_t index = (size_t)c;
-    if (c >= 'A' && c <= 'Z')
-    {
-        index -= 65;
-    }
-    if (c >= 'a' && c <= 'z')
-    {
-        index -= 71;
-    }
-    return index;
-}
-
-void expected_output(struct network *network, char c)
-{
-    if (c >= 'A' && c <= 'Z')
-        network->goal[(int)(c)-65] = 1;
-
-    else if (c >= 'a' && c <= 'z')
-        network->goal[((int)(c)-97) + 26] = 1;
-}
-
 char *update_path(const char *filepath, size_t len, char c, size_t index)
 {
     // Allocate one extra byte for the null terminator
     char *newpath = malloc((len + 1) * sizeof(char));
-    if (newpath == NULL) {
+    if (newpath == NULL)
+    {
         fprintf(stderr, "Memory allocation failed\n");
         exit(1);
     }
     // Copy the original path
     strncpy(newpath, filepath, len);
-    newpath[len] = '\0';  // Ensure null-termination
+    newpath[len] = '\0'; // Ensure null-termination
     // Update specific positions
-    if (len > 17) newpath[17] = c;
-    if (len > 15) {
-        if (c <= 'Z') {
+    if (len > 17)
+        newpath[17] = c;
+    if (len > 15)
+    {
+        if (c <= 'Z')
+        {
             newpath[14] = 'a';
             newpath[15] = 'j';
-        } else {
+        }
+        else
+        {
             newpath[14] = 'i';
             newpath[15] = 'n';
         }
     }
-    if (len > 18) newpath[18] = (char)(index + 48);
+    if (len > 18)
+        newpath[18] = (char)(index + 48);
     return newpath;
 }
 
-void input_from_txt(char *filepath, struct network *net)
+void input_from_txt(char *filepath, struct fnn *net)
 {
     FILE *file = fopen(filepath, "r");
     if (file == NULL)
@@ -293,20 +211,39 @@ void input_from_txt(char *filepath, struct network *net)
     fclose(file);
 }
 
+void read_binary_image(const char *filepath, double arr[28][28])
+{
+    FILE *file = fopen(filepath, "r");
+    if (file == NULL)
+    {
+        exit(1);
+    }
+    size_t size = 28;
+    for (size_t i = 0; i < size; i++)
+    {
+        for (size_t j = 0; j < size; j++)
+        {
+            fscanf(file, "%lf ", &arr[i][j]);
+        }
+        fscanf(file, "\n");
+    }
+    fclose(file);
+}
+
 void prepare_training()
 {
     init_sdl();
     const char *base_filepath = "img/training/maj/A0.png";
     const char *base_filematrix = "img/training/maj/A0.txt";
-    char expected_result[52] = { 'A', 'a', 'B', 'b', 'C', 'c', 'D', 'd', 'E',
-                                 'e', 'F', 'f', 'G', 'g', 'H', 'h', 'I', 'i',
-                                 'J', 'j', 'K', 'k', 'L', 'I', 'M', 'm', 'N',
-                                 'n', 'O', 'o', 'P', 'p', 'Q', 'q', 'R', 'r',
-                                 'S', 's', 'I', 't', 'U', 'u', 'V', 'v', 'W',
-                                 'w', 'X', 'x', 'Y', 'y', 'Z', 'z' };
+    char expected_result[52] = {'A', 'a', 'B', 'b', 'C', 'c', 'D', 'd', 'E',
+                                'e', 'F', 'f', 'G', 'g', 'H', 'h', 'I', 'i',
+                                'J', 'j', 'K', 'k', 'L', 'I', 'M', 'm', 'N',
+                                'n', 'O', 'o', 'P', 'p', 'Q', 'q', 'R', 'r',
+                                'S', 's', 'I', 't', 'U', 'u', 'V', 'v', 'W',
+                                'w', 'X', 'x', 'Y', 'y', 'Z', 'z'};
     int **chars_matrix = NULL;
     int nb = 52;
-    
+
     for (size_t i = 0; i < (size_t)nb; i++)
     {
         for (size_t index = 0; index < 4; index++)
@@ -322,19 +259,19 @@ void prepare_training()
             SDL_Surface ***chars = malloc(sizeof(SDL_Surface **) * BlocCount);
             SDL_Surface **blocs = malloc(sizeof(SDL_Surface *) * BlocCount);
             int *charslen = DivideIntoBlocs(image, blocs, chars, BlocCount);
-            
+
             for (int j = 0; j < BlocCount; ++j)
             {
                 SDL_FreeSurface(blocs[j]);
             }
-            
+
             int chars_count = ImageToMatrix(chars, &chars_matrix, charslen, BlocCount);
             SaveMatrix(chars_matrix, filematrix);
-            
+
             // Free allocated memory
             free(filepath);
             free(filematrix);
-            
+
             // Free chars
             for (int j = 0; j < BlocCount; ++j)
             {
@@ -345,11 +282,11 @@ void prepare_training()
                 free(chars[j]);
             }
             free(chars);
-            
+
             free(blocs);
             free(charslen);
             SDL_FreeSurface(image);
-            
+
             // Free chars_matrix
             for (int j = 0; j < chars_count; ++j)
             {

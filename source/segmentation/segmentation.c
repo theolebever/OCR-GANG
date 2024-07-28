@@ -338,7 +338,7 @@ void SaveMatrix(int **chars_matrix, char *filename)
     {
         for (size_t j = 0; j < size; j++)
         {
-            fprintf(matrix, "%lf", (double)chars_matrix[0][i * size + j]);
+            fprintf(matrix, "%lf ", (double)chars_matrix[0][i * size + j]);
         }
         fprintf(matrix, "\n");
     }

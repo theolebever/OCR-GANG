@@ -16,5 +16,8 @@ Uint8 getGreen(Uint32 pixel, SDL_PixelFormat *fmt);
 Uint32 get_pixel(SDL_Surface *surface, unsigned x, unsigned y);
 void put_pixel(SDL_Surface *surface, unsigned x, unsigned y, Uint32 pixel);
 void update_surface(SDL_Surface *screen, SDL_Surface *image);
+void free_surfaces(SDL_Surface **surfaces, int count);
+void free_chars(SDL_Surface ***chars, int *charslen, int BlocCount);
+void free_chars_matrix(int **chars_matrix, int chars_count);
 
 #endif

@@ -1,14 +1,19 @@
-# OCR_Gang's Makefile
-#Author : marius.andre
-
 CC=gcc
 
 CPPFLAGS= `pkg-config --cflags sdl gtk+-3.0` -MMD
-CFLAGS= -Wall -Wextra -Werror -std=c99
-LDFLAGS= -rdynamic
+CFLAGS= -Wall -Wextra -Werror -std=c99 -fsanitize=address -g
+LDFLAGS= -rdynamic -fsanitize=address
 LDLIBS= `pkg-config --libs sdl gtk+-3.0` -lSDL_image -lm
 
-SRC= main.c source/process/process.c source/sdl/our_sdl.c source/segmentation/segmentation.c source/network/network.c source/network/tools.c source/GUI/gui.c source/network/OCR.c source/network/XOR.c
+SRC= main.c \
+	source/process/process.c \
+	source/sdl/our_sdl.c \
+	source/segmentation/segmentation.c \
+	source/network/tools.c \
+	source/network/OCR.c \
+	source/network/XOR.c \
+	source/GUI/gui.c 
+
 OBJ= $(SRC:.c=.o)
 DEP= $(SRC:.c=.d)
 

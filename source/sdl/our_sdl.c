@@ -178,3 +178,31 @@ Uint8 getBlue(Uint32 pixel, SDL_PixelFormat *fmt)
     temp = temp << fmt->Bloss; /* Expand to a full 8-bit number */
     return (Uint8)temp;
 }
+
+void free_surfaces(SDL_Surface **surfaces, int count)
+{
+    for (int i = 0; i < count; ++i)
+    {
+        SDL_FreeSurface(surfaces[i]);
+    }
+    free(surfaces);
+}
+
+void free_chars(SDL_Surface ***chars, int *charslen, int BlocCount)
+{
+    for (int j = 0; j < BlocCount; ++j)
+    {
+        free_surfaces(chars[j], charslen[j]);
+    }
+    free(chars);
+    free(charslen);
+}
+
+void free_chars_matrix(int **chars_matrix, int chars_count)
+{
+    for (int i = 0; i < chars_count; ++i)
+    {
+        free(chars_matrix[i]);
+    }
+    free(chars_matrix);
+}

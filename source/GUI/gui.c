@@ -90,63 +90,8 @@ void open_image(GtkButton *button, GtkLabel *text_label)
 int OCR(GtkButton *button, GtkTextBuffer *buffer)
 {
     UNUSED(button);
-    
-    struct network *network = initialize_network(28 * 28, 20, 52, "source/OCR/ocrwb.txt");
-    init_sdl();
-    SDL_Surface *image = load__image((char *)filename);
-    image = black_and_white(image);
-    g_print("Black and White and Binarization Done !\n");
-    
-    DrawRedLines(image);
-    int BlocCount = CountBlocs(image);
-    SDL_Surface ***chars = malloc(sizeof(SDL_Surface **) * BlocCount);
-    SDL_Surface **blocs = malloc(sizeof(SDL_Surface *) * BlocCount);
-    int *charslen = DivideIntoBlocs(image, blocs, chars, BlocCount);
-    
-    SDL_SaveBMP(image, "segmentation.bmp");
-    g_print("Segmentation Done !\n");
-    
-    free_surfaces(blocs, BlocCount);
+    UNUSED(buffer);
 
-    int **chars_matrix = NULL;
-    int chars_count = ImageToMatrix(chars, &chars_matrix, charslen, BlocCount);
-    
-    free_chars(chars, charslen, BlocCount);
-
-    char *result = calloc(chars_count + 1, sizeof(char));  // +1 for null terminator
-    if (result == NULL) {
-        free_network(network);
-        SDL_FreeSurface(image);
-        SDL_Quit();
-        return EXIT_FAILURE;
-    }
-
-    for (size_t index = 0; index < (size_t)chars_count; index++)
-    {
-        int is_espace = input_image(network, index, &chars_matrix);
-        if (!is_espace)
-        {
-            forward_pass(network);
-            size_t idx_answer = index_answer(network);
-            result[index] = retrieve_char(idx_answer);
-        }
-        else
-        {
-            result[index] = ' ';
-        }
-    }
-
-    free_chars_matrix(chars_matrix, chars_count);
-    SDL_FreeSurface(image);
-    SDL_Quit();
-    g_print("OCR Done !\n");
-
-    text = result;
-    gtk_text_buffer_set_text(buffer, result, strlen(result));
-    
-    free_network(network);
-    free(result);
-    
     return EXIT_SUCCESS;
 }
 

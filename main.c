@@ -5,7 +5,6 @@
 #include "SDL/SDL_image.h"
 #include "err.h"
 #include "source/GUI/gui.h"
-#include "source/network/network.h"
 #include "source/network/tools.h"
 #include "source/process/process.h"
 #include "source/sdl/our_sdl.h"
@@ -14,10 +13,11 @@
 #include "source/network/OCR.h"
 #include <math.h>
 
-
 #define UNUSED(x) (void)(x)
+#define NB_EPOCHS 1000
 
-void print_usage() {
+void print_usage()
+{
     printf("OCR GANG - Usage:\n");
     printf("  No arguments: Launch GUI\n");
     printf("  --train: Train neural network\n");
@@ -25,33 +25,48 @@ void print_usage() {
     printf("  --XOR: Demonstrate XOR function\n");
 }
 
-
-int main(int argc, char **argv) {
-    if (argc < 2) {
+int main(int argc, char **argv)
+{
+    if (argc < 2)
+    {
         prepare_training();
         init_gui(argc, argv);
         return 0;
     }
 
-    if (strcmp(argv[1], "--XOR") == 0) {
+    if (strcmp(argv[1], "--XOR") == 0)
+    {
         run_xor_demo();
     }
-    else if (strcmp(argv[1], "--OCR") == 0 && argc == 3) {
-        if (file_exists(argv[2])) {
-            prepare_training();
-            train_neural_network();
-            perform_ocr(argv[2]);
-        } else {
-            printf("Error: Image file not found. Please specify a correct path.\n");
+    else if (strcmp(argv[1], "--OCR") == 0 && argc == 3)
+    {
+        printf("Not implemented\n");
+    }
+    else if (strcmp(argv[1], "--train") == 0)
+    {
+        prepare_training();
+
+        // Préparer les données d'entrainement
+        double input[INPUT_HEIGHT][INPUT_WIDTH] = {{0}};
+
+        char *filematrix = "img/training/maj/A0.txt\0";
+        char expected_result[52] = {'A', 'a', 'B', 'b', 'C', 'c', 'D', 'd', 'E',
+                                    'e', 'F', 'f', 'G', 'g', 'H', 'h', 'I', 'i',
+                                    'J', 'j', 'K', 'k', 'L', 'I', 'M', 'm', 'N',
+                                    'n', 'O', 'o', 'P', 'p', 'Q', 'q', 'R', 'r',
+                                    'S', 's', 'I', 't', 'U', 'u', 'V', 'v', 'W',
+                                    'w', 'X', 'x', 'Y', 'y', 'Z', 'z'};
+        for (size_t index = 0; index < 4; index++)
+        {
+            char *newpath = update_path(filematrix, (size_t)strlen(filematrix),
+                                        expected_result[0], index);
+            read_binary_image(filematrix, input);
+            free(newpath);
         }
     }
-    else if (strcmp(argv[1], "--train") == 0) {
-        prepare_training();
-        train_neural_network();
-    }
-    else {
+    else
+    {
         print_usage();
     }
-
     return 0;
 }
