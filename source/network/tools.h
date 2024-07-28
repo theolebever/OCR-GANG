@@ -27,5 +27,7 @@ void free_surfaces(SDL_Surface **surfaces, int count);
 int input_image(float *input_layer, const int *image_data, size_t image_size);
 void read_binary_image(const char *filepath, double *arr);
 void xavier_init(float *weights, int fan_in, int fan_out);
+double relu(double x);
+double drelu(double x);
 
 #endif

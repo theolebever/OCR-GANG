@@ -165,17 +165,6 @@ void matrix_multiply(double *A, double *B, double *C, int m, int n, int k)
     }
 }
 
-// ReLU activation function
-double relu(double x)
-{
-    return x > 0 ? x : 0;
-}
-
-double drelu(double x)
-{
-    return x > 0 ? 1 : 0;
-}
-
 // Adaptive learning rate
 void adaptive_learning_rate(struct fnn *net)
 {

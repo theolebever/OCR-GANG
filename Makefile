@@ -1,8 +1,8 @@
 CC=gcc
 
 CPPFLAGS= `pkg-config --cflags sdl gtk+-3.0` -MMD
-CFLAGS= -Wall -Wextra -Werror -std=c99 -fsanitize=address -g
-LDFLAGS= -rdynamic -fsanitize=address
+CFLAGS= -Wall -Wextra -Werror -std=c99 -O3
+LDFLAGS= -rdynamic
 LDLIBS= `pkg-config --libs sdl gtk+-3.0` -lSDL_image -lm
 
 SRC= main.c \
@@ -13,12 +13,14 @@ SRC= main.c \
 	source/network/OCR.c \
 	source/network/XOR.c \
 	source/network/early_stop.c\
-	source/GUI/gui.c 
+	source/network/adam.c\
+	source/GUI/gui.c
 
 OBJ= $(SRC:.c=.o)
 DEP= $(SRC:.c=.d)
 
 all: main create
+
 
 create:
 	[ -d "source/Xor" ] || mkdir source/Xor

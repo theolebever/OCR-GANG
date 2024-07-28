@@ -34,6 +34,17 @@ double sigmoid_derivative(double x)
     return s * (1 - s);
 }
 
+// ReLU activation function
+double relu(double x)
+{
+    return x > 0 ? x : 0;
+}
+
+double drelu(double x)
+{
+    return x > 0 ? 1 : 0;
+}
+
 /* ##################################################
                 INIT FUNCTIONS
    ################################################## */

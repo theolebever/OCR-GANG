@@ -1,6 +1,8 @@
 #ifndef OCR_H_
 #define OCR_H_
 
+#include "adam.h"
+
 #define INPUT_WIDTH 28
 #define INPUT_HEIGHT 28
 
@@ -66,6 +68,7 @@ typedef struct
 {
     int num_layers;
     Layer **layers;
+    AdamOptimizer **optimizers; // One optimizer per layer
 } Network;
 
 Network *create_ocr_network();
@@ -87,5 +90,6 @@ void backward_pass(Network *net, float *target);
 void update_parameters(Network *net, float learning_rate);
 void train(Network *net, const char *filematrix, char *expected_result, int num_samples_per_char, int epochs, float learning_rate);
 int predict(Network *net, float *input);
+char retrieve_answer(Network *net);
 
 #endif

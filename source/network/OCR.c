@@ -7,9 +7,11 @@
 #include "tools.h"
 #include "early_stop.h"
 
+#define DEBUG 0
+
 Network *create_ocr_network()
 {
-    Network *net = create_network(6); // 7 layers total
+    Network *net = create_network(6); // 6 layers total
 
     // Assuming 28x28 binary input
     add_conv_layer(net, 0, INPUT_HEIGHT, INPUT_WIDTH, 1, 3, 3, 32); // 32 3x3 filters
@@ -17,7 +19,7 @@ Network *create_ocr_network()
     add_conv_layer(net, 2, 9, 9, 32, 3, 3, 64);                     // 64 3x3 filters
     add_pool_layer(net, 3, 7, 7, 64, 2, 2, 2);                      // 2x2 max pooling
     add_fc_layer(net, 4, 3 * 3 * 64, 128);                          // Fully connected layer
-    add_fc_layer(net, 5, 128, 26);                                  // Output layer (assuming 26 characters)
+    add_fc_layer(net, 5, 128, 52);                                  // Output layer (52 characters)
 
     return net;
 }
@@ -28,6 +30,7 @@ Network *create_network(int num_layers)
     Network *net = (Network *)malloc(sizeof(Network));
     net->num_layers = num_layers;
     net->layers = (Layer **)malloc(num_layers * sizeof(Layer *));
+    net->optimizers = (AdamOptimizer **)malloc(num_layers * sizeof(AdamOptimizer *));
     return net;
 }
 
@@ -104,6 +107,10 @@ void add_conv_layer(Network *net, int layer_index, int in_w, int in_h, int in_d,
     // Set forward and backward functions
     conv->base.forward = conv_forward;
     conv->base.backward = conv_backward;
+
+    // Setup Adam optimizer
+    int param_count = filter_w * filter_h * in_d * num_filters + num_filters;
+    net->optimizers[layer_index] = init_adam(param_count, 0.85, 0.995, 1e-7);
 
     // Add layer to network
     net->layers[layer_index] = (Layer *)conv;
@@ -188,6 +195,10 @@ void add_fc_layer(Network *net, int layer_index, int input_size, int output_size
     fc->base.forward = fc_forward;
     fc->base.backward = fc_backward;
 
+    // Setup Adam optimize
+    int param_count = input_size * output_size + output_size;
+    net->optimizers[layer_index] = init_adam(param_count, 0.85, 0.995, 1e-7);
+
     // Add layer to network
     net->layers[layer_index] = (Layer *)fc;
 }
@@ -216,6 +227,7 @@ void free_network_cnn(Network *net)
             free(conv->biases);
             free(conv->weight_gradients);
             free(conv->bias_gradients);
+            free_adam(net->optimizers[i]);
             break;
         }
         case LAYER_POOL:
@@ -231,6 +243,7 @@ void free_network_cnn(Network *net)
             free(fc->biases);
             free(fc->weight_gradients);
             free(fc->bias_gradients);
+            free_adam(net->optimizers[i]);
             break;
         }
         default:
@@ -238,7 +251,7 @@ void free_network_cnn(Network *net)
         }
     }
 
-    // Now, free input and output volumes
+    // Now, free input, output volumes and optimizers
     for (int i = 0; i < net->num_layers; i++)
     {
         if (net->layers[i]->input && (i == 0 || net->layers[i]->input != net->layers[i - 1]->output))
@@ -258,6 +271,7 @@ void free_network_cnn(Network *net)
     {
         free(net->layers[i]);
     }
+    free(net->optimizers);
     free(net->layers);
     free(net);
 }
@@ -426,7 +440,7 @@ void fc_forward(Layer *layer, Volume *input)
             sum += input->data[j] * fc->weights[i * fc->input_size + j];
         }
         sum += fc->biases[i];
-        layer->output->data[i] = sigmoid(sum);
+        layer->output->data[i] = relu(sum);
     }
 }
 
@@ -600,6 +614,17 @@ void update_parameters(Network *net, float learning_rate)
                 layer->biases[j] -= learning_rate * layer->bias_gradients[j];
                 layer->bias_gradients[j] = 0; // Reset gradients
             }
+
+            // TODO: Fix Adam implementation
+            // // Update weights
+            // adam_update(net->optimizers[i], layer->weights, layer->weight_gradients, weight_size, learning_rate);
+
+            // // Update biases
+            // adam_update(net->optimizers[i], layer->biases, layer->bias_gradients, layer->num_filters, learning_rate);
+
+            // // Reset gradients
+            // memset(layer->weight_gradients, 0, weight_size * sizeof(float));
+            // memset(layer->bias_gradients, 0, layer->num_filters * sizeof(float));
             break;
         }
         case LAYER_FC:
@@ -616,6 +641,15 @@ void update_parameters(Network *net, float learning_rate)
                 layer->biases[j] -= learning_rate * layer->bias_gradients[j];
                 layer->bias_gradients[j] = 0; // Reset gradients
             }
+
+            // // Update weights
+            // adam_update(net->optimizers[i], layer->weights, layer->weight_gradients, weight_size, learning_rate);
+
+            // // Update biases
+            // adam_update(net->optimizers[i], layer->biases, layer->bias_gradients, layer->output_size, learning_rate);
+
+            // // Reset gradients
+            // memset(layer->weight_gradients, 0, weight_size * sizeof(float));
             break;
         }
         case LAYER_POOL:
@@ -630,20 +664,23 @@ void update_parameters(Network *net, float learning_rate)
 
 float calculate_loss(Network *net, float *target)
 {
+    // Using the Cross-Entropy Loss
     FCLayer *output_layer = (FCLayer *)net->layers[net->num_layers - 1];
     float loss = 0;
     for (int i = 0; i < output_layer->output_size; i++)
     {
-        float diff = output_layer->base.output->data[i] - target[i];
-        loss += diff * diff;
+        float y = target[i];
+        float y_pred = output_layer->base.output->data[i];
+        // Add small epsilon to avoid log(0)
+        loss -= y * log(y_pred + 1e-10) + (1 - y) * log(1 - y_pred + 1e-10);
     }
-    return loss / (2 * output_layer->output_size);
+    return loss / output_layer->output_size;
 }
 
 void train(Network *net, const char *filematrix, char *expected_result, int num_samples_per_char, int epochs, float learning_rate)
 {
     double *input = (double *)calloc(INPUT_HEIGHT * INPUT_WIDTH, sizeof(double));
-    float *target = (float *)calloc(26, sizeof(float)); // Assuming 26 output classes (A-Z)
+    float *target = (float *)calloc(52, sizeof(float)); // 52 output classes (A-Z, a-z)
 
     // Initialize early stopping
     EarlyStopping *es = init_early_stopping(net, 10); // patience of 10 epochs
@@ -654,12 +691,18 @@ void train(Network *net, const char *filematrix, char *expected_result, int num_
         int total_samples = 0;
 
         for (size_t i = 0; i < 52; i++)
-        { // Loop over all characters (A-Z, a-z)
+        {
+            // Loop over all characters (A-Z, a-z)
             char letter = expected_result[i];
-            target[(letter - 'A') % 26] = 1.0; // Set the target for current character
+            int target_index = (letter >= 'a') ? (letter - 'a' + 26) : (letter - 'A');
+
+            // Reset all targets to 0.0
+            memset(target, 0, 52 * sizeof(float));
+            target[target_index] = 1.0; // Set the target for current character
 
             for (int j = 0; j < num_samples_per_char; j++)
-            { // Loop over samples for each character
+            {
+                // Loop over samples for each character
                 char *newpath = update_path(filematrix, strlen(filematrix), letter, j);
                 read_binary_image(newpath, input);
 
@@ -672,10 +715,15 @@ void train(Network *net, const char *filematrix, char *expected_result, int num_
                 total_loss += loss;
                 total_samples++;
 
+                // Optional debug display
+                if (DEBUG)
+                {
+                    char result = retrieve_answer(net);
+                    printf("Gave path : %s / Result expected was : %c / Result provided is : %c\n", newpath, letter, result);
+                }
+
                 free(newpath);
             }
-
-            target[(letter - 'A') % 26] = 0.0; // Reset the target for next character
         }
 
         // Calculate average loss for this epoch
@@ -722,6 +770,35 @@ void train(Network *net, const char *filematrix, char *expected_result, int num_
     free(input);
     free(target);
     free_early_stopping(es);
+}
+
+char retrieve_answer(Network *net)
+{
+    // Assume the last layer is fully connected with outputs for each class
+    FCLayer *output_layer = (FCLayer *)net->layers[net->num_layers - 1];
+    float max_val = output_layer->base.output->data[0];
+    int max_idx = 0;
+
+    for (int i = 1; i < output_layer->output_size; i++)
+    {
+        if (output_layer->base.output->data[i] > max_val)
+        {
+            max_val = output_layer->base.output->data[i];
+            max_idx = i;
+        }
+    }
+
+    char result;
+    if (max_idx < 26)
+    {
+        result = 'A' + max_idx;
+    }
+    else
+    {
+        result = 'a' + (max_idx - 26);
+    }
+
+    return result;
 }
 
 // Prediction Function

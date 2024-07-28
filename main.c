@@ -54,7 +54,7 @@ int main(int argc, char **argv)
                                     'n', 'O', 'o', 'P', 'p', 'Q', 'q', 'R', 'r',
                                     'S', 's', 'I', 't', 'U', 'u', 'V', 'v', 'W',
                                     'w', 'X', 'x', 'Y', 'y', 'Z', 'z'};
-        train(cnn, filematrix, expected_result, 4, 1000, 0.001);
+        train(cnn, filematrix, expected_result, 4, 1, 0.1);
         free_network_cnn(cnn);
     }
     else
