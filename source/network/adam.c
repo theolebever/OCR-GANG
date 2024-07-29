@@ -32,6 +32,23 @@ AdamOptimizer *init_adam(int param_count, float beta1, float beta2, float epsilo
 
 void adam_update(AdamOptimizer *adam, float *params, float *grads, int param_count, float learning_rate)
 {
+    // Gradient clipping
+    float grad_norm = 0.0;
+    for (int i = 0; i < param_count; i++)
+    {
+        grad_norm += grads[i] * grads[i];
+    }
+    grad_norm = sqrt(grad_norm);
+
+    if (grad_norm > MAX_GRAD_NORM)
+    {
+        float scale = MAX_GRAD_NORM / (grad_norm + 1e-6);
+        for (int i = 0; i < param_count; i++)
+        {
+            grads[i] *= scale;
+        }
+    }
+
     adam->t++;
     float lr_t = learning_rate * sqrt(1 - pow(adam->beta2, adam->t)) / (1 - pow(adam->beta1, adam->t));
 

@@ -314,3 +314,58 @@ void prepare_training()
         }
     }
 }
+
+void restore_best_params(Network *net, EarlyStopping *es)
+{
+    int idx = 0;
+    for (int i = 0; i < net->num_layers; i++)
+    {
+        if (net->layers[i]->type == LAYER_CONV)
+        {
+            ConvLayer *conv = (ConvLayer *)net->layers[i];
+            int weights_size = conv->filter_width * conv->filter_height * conv->base.input->depth * conv->num_filters;
+            memcpy(conv->weights, es->best_params + idx, weights_size * sizeof(float));
+            idx += weights_size;
+            memcpy(conv->biases, es->best_params + idx, conv->num_filters * sizeof(float));
+            idx += conv->num_filters;
+        }
+        else if (net->layers[i]->type == LAYER_FC)
+        {
+            FCLayer *fc = (FCLayer *)net->layers[i];
+            int weights_size = fc->input_size * fc->output_size;
+            memcpy(fc->weights, es->best_params + idx, weights_size * sizeof(float));
+            idx += weights_size;
+            memcpy(fc->biases, es->best_params + idx, fc->output_size * sizeof(float));
+            idx += fc->output_size;
+        }
+    }
+}
+
+char retrieve_answer(Network *net)
+{
+    // Assume the last layer is fully connected with outputs for each class
+    FCLayer *output_layer = (FCLayer *)net->layers[net->num_layers - 1];
+    float max_val = output_layer->base.output->data[0];
+    int max_idx = 0;
+
+    for (int i = 1; i < output_layer->output_size; i++)
+    {
+        if (output_layer->base.output->data[i] > max_val)
+        {
+            max_val = output_layer->base.output->data[i];
+            max_idx = i;
+        }
+    }
+
+    char result;
+    if (max_idx < 26)
+    {
+        result = 'A' + max_idx;
+    }
+    else
+    {
+        result = 'a' + (max_idx - 26);
+    }
+
+    return result;
+}

@@ -3,6 +3,7 @@
 
 #include "OCR.h"
 #include "XOR.h"
+#include "early_stop.h"
 #include "SDL/SDL.h"
 #include "SDL/SDL_image.h"
 
@@ -29,5 +30,7 @@ void read_binary_image(const char *filepath, double *arr);
 void xavier_init(float *weights, int fan_in, int fan_out);
 double relu(double x);
 double drelu(double x);
+void restore_best_params(Network *net, EarlyStopping *es);
+char retrieve_answer(Network *net);
 
 #endif

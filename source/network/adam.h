@@ -1,4 +1,7 @@
 #ifndef ADAM_H_
+#define ADAM_H_
+
+#define MAX_GRAD_NORM 5.0
 
 typedef struct
 {
