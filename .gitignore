@@ -45,3 +45,12 @@
 *.su
 *.idb
 *.pdb
+
+# Executable
+main
+
+# Trash
+source/OCR
+source/Xor
+img/training/maj/*.txt
+img/training/min/*.txt

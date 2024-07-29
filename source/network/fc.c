@@ -39,30 +39,28 @@ void add_fc_layer(Network *net, int layer_index, int input_size, int output_size
     fc->weight_gradients = (float *)calloc(weights_size, sizeof(float));
     fc->bias_gradients = (float *)calloc(output_size, sizeof(float));
 
-    // Set forward and backward functions
-    fc->base.forward = fc_forward;
-    fc->base.backward = fc_backward;
-
-    // Setup Adam optimize
-    int param_count = input_size * output_size + output_size;
-    net->optimizers[layer_index] = init_adam(param_count, 0.85, 0.995, 1e-7);
-
     // Add layer to network
     net->layers[layer_index] = (Layer *)fc;
 }
 
-void fc_forward(Layer *layer, Volume *input)
+// Forward pass for fully connected layer
+void fc_forward(FCLayer *layer, Volume *input)
 {
-    FCLayer *fc = (FCLayer *)layer;
-    for (int i = 0; i < fc->output_size; i++)
+    // Allocate output if not already allocated
+    if (layer->base.output == NULL)
+    {
+        layer->base.output = create_volume(1, 1, layer->output_size);
+    }
+
+    for (int i = 0; i < layer->output_size; i++)
     {
         float sum = 0;
-        for (int j = 0; j < fc->input_size; j++)
+        for (int j = 0; j < layer->input_size; j++)
         {
-            sum += input->data[j] * fc->weights[i * fc->input_size + j];
+            sum += input->data[j] * layer->weights[i * layer->input_size + j];
         }
-        sum += fc->biases[i];
-        layer->output->data[i] = relu(sum);
+        sum += layer->biases[i];
+        layer->base.output->data[i] = relu(sum);
     }
 }
 

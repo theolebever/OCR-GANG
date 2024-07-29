@@ -74,47 +74,43 @@ void add_conv_layer(Network *net, int layer_index, int in_w, int in_h, int in_d,
         exit(EXIT_FAILURE);
     }
 
-    // Set forward and backward functions
-    conv->base.forward = conv_forward;
-    conv->base.backward = conv_backward;
-
-    // Setup Adam optimizer
-    int param_count = filter_w * filter_h * in_d * num_filters + num_filters;
-    net->optimizers[layer_index] = init_adam(param_count, 0.85, 0.995, 1e-7);
-
     // Add layer to network
     net->layers[layer_index] = (Layer *)conv;
 }
 
-void conv_forward(Layer *layer, Volume *input)
+// Forward pass for convolutional layer
+void conv_forward(ConvLayer *layer, Volume *input)
 {
-    ConvLayer *conv = (ConvLayer *)layer;
-    int out_w = input->width - conv->filter_width + 1;
-    int out_h = input->height - conv->filter_height + 1;
+    int out_h = input->height - layer->filter_height + 1;
+    int out_w = input->width - layer->filter_width + 1;
 
-    for (int f = 0; f < conv->num_filters; f++)
+    // Allocate output if not already allocated
+    if (layer->base.output == NULL)
+    {
+        layer->base.output = create_volume(out_w, out_h, layer->num_filters);
+    }
+
+    for (int f = 0; f < layer->num_filters; f++)
     {
         for (int y = 0; y < out_h; y++)
         {
             for (int x = 0; x < out_w; x++)
             {
                 float sum = 0;
-                for (int fy = 0; fy < conv->filter_height; fy++)
+                for (int fy = 0; fy < layer->filter_height; fy++)
                 {
-                    for (int fx = 0; fx < conv->filter_width; fx++)
+                    for (int fx = 0; fx < layer->filter_width; fx++)
                     {
                         for (int d = 0; d < input->depth; d++)
                         {
-                            int ix = x + fx;
-                            int iy = y + fy;
-                            float input_val = input->data[(iy * input->width + ix) * input->depth + d];
-                            float weight = conv->weights[(f * conv->filter_height * conv->filter_width + fy * conv->filter_width + fx) * input->depth + d];
-                            sum += input_val * weight;
+                            int input_idx = ((y + fy) * input->width + (x + fx)) * input->depth + d;
+                            int filter_idx = (fy * layer->filter_width + fx) * input->depth + d;
+                            sum += input->data[input_idx] * layer->weights[f * layer->filter_width * layer->filter_height * input->depth + filter_idx];
                         }
                     }
                 }
-                sum += conv->biases[f];
-                layer->output->data[(y * out_w + x) * conv->num_filters + f] = (sum > 0) ? sum : 0; // ReLU activation
+                sum += layer->biases[f];
+                layer->base.output->data[(y * out_w + x) * layer->num_filters + f] = relu(sum);
             }
         }
     }

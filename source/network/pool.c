@@ -37,18 +37,22 @@ void add_pool_layer(Network *net, int layer_index, int in_w, int in_h, int in_d,
         exit(EXIT_FAILURE);
     }
 
-    pool->base.forward = (void (*)(Layer *, Volume *))pool_forward;
-    pool->base.backward = (void (*)(Layer *, float *))pool_backward;
-
     net->layers[layer_index] = (Layer *)pool;
 }
 
+// Forward pass for pooling layer
 void pool_forward(PoolLayer *layer, Volume *input)
 {
+    int in_w = input->width;
+    int in_h = input->height;
+    int in_d = input->depth;
     int out_w = layer->base.output->width;
     int out_h = layer->base.output->height;
+    int pool_w = layer->pool_width;
+    int pool_h = layer->pool_height;
+    int stride = layer->stride;
 
-    for (int d = 0; d < input->depth; d++)
+    for (int d = 0; d < in_d; d++)
     {
         for (int y = 0; y < out_h; y++)
         {
@@ -56,25 +60,26 @@ void pool_forward(PoolLayer *layer, Volume *input)
             {
                 float max_val = -INFINITY;
                 int max_idx = -1;
-                for (int py = 0; py < layer->pool_height; py++)
+                for (int py = 0; py < pool_h; py++)
                 {
-                    for (int px = 0; px < layer->pool_width; px++)
+                    for (int px = 0; px < pool_w; px++)
                     {
-                        int ix = x * layer->stride + px;
-                        int iy = y * layer->stride + py;
-                        if (ix < input->width && iy < input->height)
-                        { // Bounds check
-                            float val = input->data[(iy * input->width + ix) * input->depth + d];
-                            if (val > max_val)
+                        int in_y = y * stride + py;
+                        int in_x = x * stride + px;
+                        if (in_y < in_h && in_x < in_w)
+                        {
+                            int input_idx = (in_y * in_w + in_x) * in_d + d;
+                            if (input->data[input_idx] > max_val)
                             {
-                                max_val = val;
-                                max_idx = (iy * input->width + ix) * input->depth + d;
+                                max_val = input->data[input_idx];
+                                max_idx = input_idx;
                             }
                         }
                     }
                 }
-                layer->base.output->data[(y * out_w + x) * input->depth + d] = max_val;
-                layer->max_indices[(y * out_w + x) * input->depth + d] = max_idx;
+                int out_idx = (y * out_w + x) * in_d + d;
+                layer->base.output->data[out_idx] = max_val;
+                layer->max_indices[out_idx] = max_idx;
             }
         }
     }

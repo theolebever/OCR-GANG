@@ -1,10 +1,9 @@
 #ifndef OCR_H_
 #define OCR_H_
 
-#include "adam.h"
-
 #define INPUT_WIDTH 28
 #define INPUT_HEIGHT 28
+#define INPUT_DEPTH 1
 
 // Define layer types
 typedef enum
@@ -29,8 +28,6 @@ typedef struct Layer
     LayerType type;
     Volume *input;
     Volume *output;
-    void (*forward)(struct Layer *layer, Volume *input);
-    void (*backward)(struct Layer *layer, float *upstream_gradient);
 } Layer;
 
 // Convolutional layer
@@ -68,26 +65,16 @@ typedef struct
 {
     int num_layers;
     Layer **layers;
-    AdamOptimizer **optimizers; // One optimizer per layer
 } Network;
 
 Network *create_ocr_network();
 Network *create_network(int num_layers);
-void add_conv_layer(Network *net, int layer_index, int in_w, int in_h, int in_d,
-                    int filter_w, int filter_h, int num_filters);
-void add_pool_layer(Network *net, int layer_index, int in_w, int in_h, int in_d,
-                    int pool_w, int pool_h, int stride);
-void add_fc_layer(Network *net, int layer_index, int input_size, int output_size);
 void free_network_cnn(Network *net);
-void conv_forward(Layer *layer, Volume *input);
-void conv_backward(Layer *layer, float *upstream_gradient);
-void pool_forward(PoolLayer *layer, Volume *input);
-void pool_backward(PoolLayer *layer, float *upstream_gradient);
-void fc_forward(Layer *layer, Volume *input);
-void fc_backward(Layer *layer, float *upstream_gradient);
 void forward_pass_ocr(Network *net, float *input);
 void backward_pass(Network *net, float *target);
 void update_parameters(Network *net, float learning_rate);
+Volume *create_volume(int width, int height, int depth);
+void free_volume(Volume *vol);
 void train(Network *net, const char *filematrix, char *expected_result, int num_samples_per_char, int epochs, float learning_rate);
 int predict(Network *net, float *input);
 char retrieve_answer(Network *net);

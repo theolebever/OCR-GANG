@@ -1,8 +1,8 @@
 CC=gcc
 
 CPPFLAGS= `pkg-config --cflags sdl gtk+-3.0` -MMD
-CFLAGS= -Wall -Wextra -Werror -std=c99 -O3
-LDFLAGS= -rdynamic
+CFLAGS= -Wall -Wextra -Werror -std=c99 -g -fsanitize=address
+LDFLAGS= -rdynamic -fsanitize=address
 LDLIBS= `pkg-config --libs sdl gtk+-3.0` -lSDL_image -lm
 
 SRC= main.c \
@@ -13,7 +13,6 @@ SRC= main.c \
 	source/network/OCR.c \
 	source/network/XOR.c \
 	source/network/early_stop.c\
-	source/network/adam.c\
 	source/network/pool.c\
 	source/network/fc.c\
 	source/network/conv.c\

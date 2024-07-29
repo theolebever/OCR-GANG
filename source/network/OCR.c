@@ -33,7 +33,6 @@ Network *create_network(int num_layers)
     Network *net = (Network *)malloc(sizeof(Network));
     net->num_layers = num_layers;
     net->layers = (Layer **)malloc(num_layers * sizeof(Layer *));
-    net->optimizers = (AdamOptimizer **)malloc(num_layers * sizeof(AdamOptimizer *));
     return net;
 }
 
@@ -61,7 +60,6 @@ void free_network_cnn(Network *net)
             free(conv->biases);
             free(conv->weight_gradients);
             free(conv->bias_gradients);
-            free_adam(net->optimizers[i]);
             break;
         }
         case LAYER_POOL:
@@ -77,10 +75,10 @@ void free_network_cnn(Network *net)
             free(fc->biases);
             free(fc->weight_gradients);
             free(fc->bias_gradients);
-            free_adam(net->optimizers[i]);
             break;
         }
         default:
+            // Handle unknown layer types or add more cases as needed
             break;
         }
     }
@@ -105,39 +103,63 @@ void free_network_cnn(Network *net)
     {
         free(net->layers[i]);
     }
-    free(net->optimizers);
     free(net->layers);
     free(net);
 }
 
-void forward_pass_ocr(Network *net, float *input)
+void forward_pass_ocr(Network *net, float *input_data)
 {
-    // Assuming the first layer is always convolutional or FC
-    memcpy(net->layers[0]->input->data, input, net->layers[0]->input->width * net->layers[0]->input->height * net->layers[0]->input->depth * sizeof(float));
+    // Copy input data to the first layer's input
+    Volume *first_layer_input = net->layers[0]->input;
+    memcpy(first_layer_input->data, input_data,
+           first_layer_input->width * first_layer_input->height * first_layer_input->depth * sizeof(float));
 
     for (int i = 0; i < net->num_layers; i++)
     {
-        switch (net->layers[i]->type)
+        Layer *layer = net->layers[i];
+        Volume *layer_input = (i == 0) ? first_layer_input : net->layers[i - 1]->output;
+
+        switch (layer->type)
         {
+        case LAYER_INPUT:
+            // Input layer just passes the input volume
+            break;
         case LAYER_CONV:
-            net->layers[i]->forward(net->layers[i], net->layers[i]->input);
+            conv_forward((ConvLayer *)layer, layer_input);
             break;
         case LAYER_POOL:
-            pool_forward((PoolLayer *)net->layers[i], net->layers[i]->input);
+            pool_forward((PoolLayer *)layer, layer_input);
             break;
         case LAYER_FC:
-            net->layers[i]->forward(net->layers[i], net->layers[i]->input);
+            fc_forward((FCLayer *)layer, layer_input);
             break;
-        default:
-            fprintf(stderr, "Unknown layer type\n");
-            exit(EXIT_FAILURE);
+        case LAYER_OUTPUT:
+            // Output layer is typically a fully connected layer without ReLU
+            fc_forward((FCLayer *)layer, layer_input);
+            // Apply softmax here if needed
+            break;
         }
+    }
+}
 
-        // Set input of next layer to output of current layer, if not last layer
-        if (i < net->num_layers - 1)
-        {
-            net->layers[i + 1]->input = net->layers[i]->output;
-        }
+// Helper function to create a new Volume
+Volume *create_volume(int width, int height, int depth)
+{
+    Volume *v = (Volume *)malloc(sizeof(Volume));
+    v->width = width;
+    v->height = height;
+    v->depth = depth;
+    v->data = (float *)calloc(width * height * depth, sizeof(float));
+    return v;
+}
+
+// Helper function for freeing volumes
+void free_volume(Volume *vol)
+{
+    if (vol)
+    {
+        free(vol->data);
+        free(vol);
     }
 }
 
@@ -178,13 +200,13 @@ void backward_pass(Network *net, float *target)
         switch (net->layers[i]->type)
         {
         case LAYER_CONV:
-            net->layers[i]->backward(net->layers[i], error);
+            conv_backward(net->layers[i], error);
             break;
         case LAYER_POOL:
             pool_backward((PoolLayer *)net->layers[i], error);
             break;
         case LAYER_FC:
-            net->layers[i]->backward(net->layers[i], error);
+            fc_backward(net->layers[i], error);
             break;
         default:
             fprintf(stderr, "Unknown layer type in backward pass\n");
@@ -225,17 +247,6 @@ void update_parameters(Network *net, float learning_rate)
                 layer->biases[j] -= learning_rate * layer->bias_gradients[j];
                 layer->bias_gradients[j] = 0; // Reset gradients
             }
-
-            // TODO: Fix Adam implementation
-            // Update weights
-            // adam_update(net->optimizers[i], layer->weights, layer->weight_gradients, weight_size, learning_rate);
-
-            // // Update biases
-            // adam_update(net->optimizers[i], layer->biases, layer->bias_gradients, layer->num_filters, learning_rate);
-
-            // // Reset gradients
-            // memset(layer->weight_gradients, 0, weight_size * sizeof(float));
-            // memset(layer->bias_gradients, 0, layer->num_filters * sizeof(float));
             break;
         }
         case LAYER_FC:
@@ -252,16 +263,6 @@ void update_parameters(Network *net, float learning_rate)
                 layer->biases[j] -= learning_rate * layer->bias_gradients[j];
                 layer->bias_gradients[j] = 0; // Reset gradients
             }
-
-            // Update weights
-            // adam_update(net->optimizers[i], layer->weights, layer->weight_gradients, weight_size, learning_rate);
-
-            // // Update biases
-            // adam_update(net->optimizers[i], layer->biases, layer->bias_gradients, layer->output_size, learning_rate);
-
-            // // Reset gradients
-            // memset(layer->weight_gradients, 0, weight_size * sizeof(float));
-            // memset(layer->bias_gradients, 0, layer->output_size * sizeof(float));
             break;
         }
         case LAYER_POOL:
@@ -324,7 +325,7 @@ void train(Network *net, const char *filematrix, char *expected_result, int num_
                 total_loss += loss;
                 total_samples++;
 
-                backward_pass(net, target);
+                // backward_pass(net, target);
                 update_parameters(net, learning_rate);
 
                 // Optional debug display
