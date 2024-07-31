@@ -203,7 +203,7 @@ void backward_pass(Network *net, float *target)
             conv_backward(net->layers[i], error);
             break;
         case LAYER_POOL:
-            pool_backward((PoolLayer *)net->layers[i], error);
+            pool_backward(net->layers[i], error);
             break;
         case LAYER_FC:
             fc_backward(net->layers[i], error);
@@ -325,7 +325,7 @@ void train(Network *net, const char *filematrix, char *expected_result, int num_
                 total_loss += loss;
                 total_samples++;
 
-                // backward_pass(net, target);
+                backward_pass(net, target);
                 update_parameters(net, learning_rate);
 
                 // Optional debug display

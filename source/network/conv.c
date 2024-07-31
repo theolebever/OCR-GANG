@@ -141,8 +141,8 @@ void conv_backward(Layer *layer, float *upstream_gradient)
                 int out_idx = (y * out_w + x) * num_f + f;
                 float gradient = upstream_gradient[out_idx];
 
-                if (layer->output->data[out_idx] > 0)
-                { // ReLU derivative
+                if (drelu(layer->output->data[out_idx]))
+                {
                     for (int fy = 0; fy < f_h; fy++)
                     {
                         for (int fx = 0; fx < f_w; fx++)

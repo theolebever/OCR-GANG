@@ -6,6 +6,5 @@
 void add_pool_layer(Network *net, int layer_index, int in_w, int in_h, int in_d,
                     int pool_w, int pool_h, int stride);
 void pool_forward(PoolLayer *layer, Volume *input);
-void pool_backward(PoolLayer *layer, float *upstream_gradient);
-
+void pool_backward(Layer *layer, float *upstream_gradient);
 #endif // !POOL_H_

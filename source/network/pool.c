@@ -85,31 +85,33 @@ void pool_forward(PoolLayer *layer, Volume *input)
     }
 }
 
-void pool_backward(PoolLayer *layer, float *upstream_gradient)
+void pool_backward(Layer *layer, float *upstream_gradient)
 {
-    int out_w = layer->base.output->width;
-    int out_h = layer->base.output->height;
-    int in_w = layer->base.input->width;
-    int in_h = layer->base.input->height;
-    int depth = layer->base.input->depth;
+    PoolLayer *pool = (PoolLayer *)layer;
+    int in_w = layer->input->width;
+    int in_h = layer->input->height;
+    int in_d = layer->input->depth;
+    int out_w = layer->output->width;
+    int out_h = layer->output->height;
 
     // Initialize input gradients to zero
-    float *input_gradients = calloc(in_w * in_h * depth, sizeof(float));
+    float *input_gradients = calloc(in_w * in_h * in_d * out_w * out_h, sizeof(float));
 
-    for (int d = 0; d < depth; d++)
+    for (int d = 0; d < in_d; d++)
     {
         for (int y = 0; y < out_h; y++)
         {
             for (int x = 0; x < out_w; x++)
             {
-                int out_idx = (y * out_w + x) * depth + d;
-                int max_idx = layer->max_indices[out_idx];
-                input_gradients[max_idx] += upstream_gradient[out_idx];
+                int out_idx = (y * out_w + x) * in_d + d;
+                int max_idx = pool->max_indices[out_idx];
+                float up = upstream_gradient[out_idx];
+                input_gradients[max_idx] += up;
             }
         }
     }
 
     // Store input gradients for the previous layer
-    memcpy(layer->base.input->data, input_gradients, in_w * in_h * depth * sizeof(float));
+    memcpy(layer->input->data, input_gradients, in_w * in_h * in_d * sizeof(float));
     free(input_gradients);
 }
