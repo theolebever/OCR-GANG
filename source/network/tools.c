@@ -254,9 +254,9 @@ void prepare_training()
     const char *base_filematrix = "img/training/maj/A0.txt";
     char expected_result[52] = {'A', 'a', 'B', 'b', 'C', 'c', 'D', 'd', 'E',
                                 'e', 'F', 'f', 'G', 'g', 'H', 'h', 'I', 'i',
-                                'J', 'j', 'K', 'k', 'L', 'I', 'M', 'm', 'N',
+                                'J', 'j', 'K', 'k', 'L', 'l', 'M', 'm', 'N',
                                 'n', 'O', 'o', 'P', 'p', 'Q', 'q', 'R', 'r',
-                                'S', 's', 'I', 't', 'U', 'u', 'V', 'v', 'W',
+                                'S', 's', 'T', 't', 'U', 'u', 'V', 'v', 'W',
                                 'w', 'X', 'x', 'Y', 'y', 'Z', 'z'};
     int **chars_matrix = NULL;
     int nb = 52;
