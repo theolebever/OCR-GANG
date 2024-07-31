@@ -16,6 +16,7 @@ SRC= main.c \
 	source/network/pool.c\
 	source/network/fc.c\
 	source/network/conv.c\
+	source/network/volume.c\
 	source/GUI/gui.c
 
 OBJ= $(SRC:.c=.o)

@@ -5,6 +5,8 @@
 #define INPUT_HEIGHT 28
 #define INPUT_DEPTH 1
 
+#include "volume.h"
+
 // Define layer types
 typedef enum
 {
@@ -14,13 +16,6 @@ typedef enum
     LAYER_FC,
     LAYER_OUTPUT
 } LayerType;
-
-// Structure to hold 3D volume of data
-typedef struct
-{
-    int width, height, depth;
-    float *data;
-} Volume;
 
 // Generic layer structure
 typedef struct Layer
