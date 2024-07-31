@@ -169,9 +169,9 @@ void backward_pass(Network *net, float *target)
     size_t max_size = 0;
     for (int i = 0; i < net->num_layers; i++)
     {
-        size_t layer_size = net->layers[i]->input->width *
-                            net->layers[i]->input->height *
-                            net->layers[i]->input->depth;
+        size_t layer_size = net->layers[i]->output->width *
+                            net->layers[i]->output->height *
+                            net->layers[i]->output->depth;
         if (layer_size > max_size)
         {
             max_size = layer_size;
