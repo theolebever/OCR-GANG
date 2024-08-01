@@ -188,16 +188,19 @@ void shuffle(int *array, size_t n)
 
 char *update_path(const char *filepath, size_t len, char c, size_t index)
 {
-    // Allocate one extra byte for the null terminator
-    char *newpath = malloc((len + 1) * sizeof(char));
+    // Allocate enough space for the new path with the updated index and ".png"
+    size_t new_len = len + 4 + 3;                         // original length + ".png" + max 3 digits for index
+    char *newpath = malloc((new_len + 1) * sizeof(char)); // +1 for the null terminator
     if (newpath == NULL)
     {
         fprintf(stderr, "Memory allocation failed\n");
         exit(1);
     }
+
     // Copy the original path
     strncpy(newpath, filepath, len);
     newpath[len] = '\0'; // Ensure null-termination
+
     // Update specific positions
     if (len > 17)
         newpath[17] = c;
@@ -214,8 +217,13 @@ char *update_path(const char *filepath, size_t len, char c, size_t index)
             newpath[15] = 'n';
         }
     }
-    if (len > 18)
-        newpath[18] = (char)(index + 48);
+
+    // Add the index at the end, before ".png", making sure to handle multiple digits
+    snprintf(newpath + 18, new_len - 21, "%zu", index); // -21 to leave space for ".png"
+
+    // Append ".png"
+    strcat(newpath, ".png");
+
     return newpath;
 }
 
@@ -275,8 +283,8 @@ int ****prepare_training()
     int ****all_chars_matrices = malloc(52 * sizeof(int ***)); // 52 for each expected result character
     for (size_t i = 0; i < 52; i++)
     {
-        all_chars_matrices[i] = malloc(4 * sizeof(int **)); // Allocate space for 4 fonts for each character
-        for (size_t index = 0; index < 4; index++)
+        all_chars_matrices[i] = malloc(50 * sizeof(int **)); // Allocate space for 4 fonts for each character
+        for (size_t index = 0; index < 50; index++)
         {
             all_chars_matrices[i][index] = NULL;
             char *filepath = update_path(base_filepath, strlen(base_filepath), expected_result[i], index);

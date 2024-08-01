@@ -39,6 +39,8 @@
 *.i*86
 *.x86_64
 *.hex
+OCRProject
+OCRProject_debug
 
 # Debug files
 *.dSYM/
@@ -54,3 +56,4 @@ source/OCR
 source/Xor
 img/training/maj/*.txt
 img/training/min/*.txt
+build/

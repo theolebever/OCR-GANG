@@ -52,6 +52,7 @@ void pool_forward(PoolLayer *layer, Volume *input)
     int pool_h = layer->pool_height;
     int stride = layer->stride;
 
+#pragma omp parallel for collapse(3)
     for (int d = 0; d < in_d; d++)
     {
         for (int y = 0; y < out_h; y++)
@@ -97,6 +98,7 @@ void pool_backward(Layer *layer, float *upstream_gradient)
     // Initialize input gradients to zero
     float *input_gradients = calloc(in_w * in_h * in_d * out_w * out_h, sizeof(float));
 
+#pragma omp parallel for collapse(3)
     for (int d = 0; d < in_d; d++)
     {
         for (int y = 0; y < out_h; y++)

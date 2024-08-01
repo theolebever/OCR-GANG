@@ -455,10 +455,10 @@ void train(Network *net, int ****training_matrix, int num_samples_per_char, int 
         float avg_loss = total_loss / total_samples;
 
         // Check for early stopping
-        if (should_stop(es, avg_loss, net, epoch))
-        {
-            break;
-        }
+        // if (should_stop(es, avg_loss, net, epoch))
+        // {
+        //     break;
+        // }
 
         if (epoch % 10 == 0)
         {

@@ -51,15 +51,12 @@ void add_fc_layer(Network *net, int layer_index, int input_size, int output_size
 // Forward pass for fully connected layer
 void fc_forward(FCLayer *layer, Volume *input)
 {
-    // Free previous output if allocated
-    if (layer->base.output != NULL)
+    if (layer->base.output == NULL)
     {
-        free_volume(layer->base.output);
+        layer->base.output = create_volume(1, 1, layer->output_size);
     }
 
-    // Allocate output volume
-    layer->base.output = create_volume(1, 1, layer->output_size);
-
+#pragma omp parallel for
     for (int i = 0; i < layer->output_size; i++)
     {
         float sum = 0;
@@ -90,6 +87,7 @@ void fc_backward(Layer *layer, float *upstream_gradient)
         return;
     }
 
+#pragma omp parallel for
     // Compute gradients for weights and biases
     for (int i = 0; i < fc->output_size; i++)
     {
@@ -109,7 +107,7 @@ void fc_backward(Layer *layer, float *upstream_gradient)
         fprintf(stderr, "Memory allocation failed in fc_backward\n");
         return;
     }
-
+#pragma omp parallel for
     for (int i = 0; i < fc->input_size; i++)
     {
         float sum = 0;

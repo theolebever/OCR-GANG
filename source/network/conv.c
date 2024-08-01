@@ -89,12 +89,12 @@ void conv_forward(ConvLayer *layer, Volume *input)
     int out_h = input->height - layer->filter_height + 1;
     int out_w = input->width - layer->filter_width + 1;
 
-    // Allocate output if not already allocated
     if (layer->base.output == NULL)
     {
         layer->base.output = create_volume(out_w, out_h, layer->num_filters);
     }
 
+#pragma omp parallel for collapse(3)
     for (int f = 0; f < layer->num_filters; f++)
     {
         for (int y = 0; y < out_h; y++)
@@ -106,12 +106,9 @@ void conv_forward(ConvLayer *layer, Volume *input)
                 {
                     for (int fx = 0; fx < layer->filter_width; fx++)
                     {
-                        for (int d = 0; d < input->depth; d++)
-                        {
-                            int input_idx = ((y + fy) * input->width + (x + fx)) * input->depth + d;
-                            int filter_idx = (fy * layer->filter_width + fx) * input->depth + d;
-                            sum += input->data[input_idx] * layer->weights[f * layer->filter_width * layer->filter_height * input->depth + filter_idx];
-                        }
+                        int input_idx = ((y + fy) * input->width + (x + fx)) * input->depth;
+                        int filter_idx = fy * layer->filter_width * input->depth + fx * input->depth;
+                        sum += input->data[input_idx] * layer->weights[filter_idx];
                     }
                 }
                 sum += layer->biases[f];
@@ -145,6 +142,7 @@ void conv_backward(Layer *layer, float *upstream_gradient)
     memset(conv->weight_gradients, 0, f_w * f_h * in_d * num_f * sizeof(float));
     memset(conv->bias_gradients, 0, num_f * sizeof(float));
 
+#pragma omp parallel for collapse(3)
     // Compute gradients
     for (int f = 0; f < num_f; f++)
     {

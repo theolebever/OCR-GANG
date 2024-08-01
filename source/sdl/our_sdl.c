@@ -80,9 +80,10 @@ static inline Uint8 *pixel_ref(SDL_Surface *surf, unsigned x, unsigned y)
 Uint32 get_pixel(SDL_Surface *surface, unsigned x, unsigned y)
 {
     Uint8 *p = pixel_ref(surface, x, y);
-    
+
     // Null check
-    if (p == NULL) {
+    if (p == NULL)
+    {
         fprintf(stderr, "Error: Null pixel reference at (%u, %u)\n", x, y);
         return 0;
     }
@@ -153,9 +154,9 @@ Uint8 getRed(Uint32 pixel, SDL_PixelFormat *fmt)
 {
     Uint32 temp;
     /* Get Red component */
-    temp = pixel & fmt->Rmask; /* Isolate red component */
+    temp = pixel & fmt->Rmask;  /* Isolate red component */
     temp = temp >> fmt->Rshift; /* Shift it down to 8-bit */
-    temp = temp << fmt->Rloss; /* Expand to a full 8-bit number */
+    temp = temp << fmt->Rloss;  /* Expand to a full 8-bit number */
     return (Uint8)temp;
 }
 
@@ -163,9 +164,9 @@ Uint8 getGreen(Uint32 pixel, SDL_PixelFormat *fmt)
 {
     Uint32 temp;
     /* Get Green component */
-    temp = pixel & fmt->Gmask; /* Isolate green component */
+    temp = pixel & fmt->Gmask;  /* Isolate green component */
     temp = temp >> fmt->Gshift; /* Shift it down to 8-bit */
-    temp = temp << fmt->Gloss; /* Expand to a full 8-bit number */
+    temp = temp << fmt->Gloss;  /* Expand to a full 8-bit number */
     return (Uint8)temp;
 }
 
@@ -173,9 +174,9 @@ Uint8 getBlue(Uint32 pixel, SDL_PixelFormat *fmt)
 {
     Uint32 temp;
     /* Get Blue component */
-    temp = pixel & fmt->Bmask; /* Isolate blue component */
+    temp = pixel & fmt->Bmask;  /* Isolate blue component */
     temp = temp >> fmt->Bshift; /* Shift it down to 8-bit */
-    temp = temp << fmt->Bloss; /* Expand to a full 8-bit number */
+    temp = temp << fmt->Bloss;  /* Expand to a full 8-bit number */
     return (Uint8)temp;
 }
 
