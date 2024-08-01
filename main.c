@@ -14,7 +14,7 @@
 #include <math.h>
 
 #define UNUSED(x) (void)(x)
-#define NB_EPOCHS 1000
+#define NB_EPOCHS 3000
 
 void print_usage()
 {
@@ -29,7 +29,7 @@ int main(int argc, char **argv)
 {
     if (argc < 2)
     {
-        prepare_training();
+        // prepare_training();
         init_gui(argc, argv);
         return 0;
     }
@@ -44,17 +44,10 @@ int main(int argc, char **argv)
     }
     else if (strcmp(argv[1], "--train") == 0)
     {
-        prepare_training();
+        int ****training_matrix = prepare_training();
         Network *cnn = create_ocr_network();
-
-        char *filematrix = "img/training/maj/A0.txt\0";
-        char expected_result[52] = {'A', 'a', 'B', 'b', 'C', 'c', 'D', 'd', 'E',
-                                    'e', 'F', 'f', 'G', 'g', 'H', 'h', 'I', 'i',
-                                    'J', 'j', 'K', 'k', 'L', 'l', 'M', 'm', 'N',
-                                    'n', 'O', 'o', 'P', 'p', 'Q', 'q', 'R', 'r',
-                                    'S', 's', 'T', 't', 'U', 'u', 'V', 'v', 'W',
-                                    'w', 'X', 'x', 'Y', 'y', 'Z', 'z'};
-        train(cnn, filematrix, expected_result, 4, NB_EPOCHS, 0.1, 0.0001, 0.5);
+        train(cnn, training_matrix, 4, 1, 0.01, 0.0001, 0.5);
+        save_network_to_bin(cnn, "network.bin");
         free_network_cnn(cnn);
     }
     else

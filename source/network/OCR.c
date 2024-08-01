@@ -214,12 +214,16 @@ void fc_forward_with_dropout(FCLayer *layer, Volume *input, float dropout_rate)
     apply_dropout(layer->base.output->data, layer->output_size, dropout_rate);
 }
 
-void forward_pass_ocr(Network *net, float *input_data, float dropout_rate)
+void forward_pass_ocr(Network *net, int *input_data, float dropout_rate)
 {
     // Copy input data to the first layer's input
     Volume *first_layer_input = net->layers[0]->input;
-    memcpy(first_layer_input->data, input_data,
-           first_layer_input->width * first_layer_input->height * first_layer_input->depth * sizeof(float));
+    int input_size = first_layer_input->width * first_layer_input->height * first_layer_input->depth;
+
+    for (int i = 0; i < input_size; i++)
+    {
+        first_layer_input->data[i] = (float)input_data[i];
+    }
 
     for (int i = 0; i < net->num_layers; i++)
     {
@@ -311,11 +315,6 @@ void backward_pass(Network *net, float *target)
     free(error);
 }
 
-void update_learning_rate(float *learning_rate, int epoch, int total_epochs, float initial_lr)
-{
-    *learning_rate = initial_lr * (1.0 - (float)epoch / total_epochs);
-}
-
 void update_parameters(Network *net, float learning_rate, float l2_lambda)
 {
     for (int i = 0; i < net->num_layers; i++)
@@ -383,13 +382,90 @@ float calculate_loss(Network *net, float *target)
     return loss / output_layer->output_size;
 }
 
-void train(Network *net, const char *filematrix, char *expected_result, int num_samples_per_char, int epochs, float initial_lr, float l2_lambda, float dropout_rate)
+// Function to save the network to a binary file
+void save_network_to_bin(Network *net, const char *filename)
 {
-    double *input = (double *)calloc(INPUT_HEIGHT * INPUT_WIDTH, sizeof(double));
+    FILE *file = fopen(filename, "wb");
+    if (file == NULL)
+    {
+        perror("Error opening file");
+        return;
+    }
+
+    // Write the number of layers
+    fwrite(&(net->num_layers), sizeof(int), 1, file);
+
+    // Iterate through each layer and save its parameters
+    for (int i = 0; i < net->num_layers; ++i)
+    {
+        Layer *layer = net->layers[i];
+
+        // Write the layer type
+        fwrite(&(layer->type), sizeof(LayerType), 1, file);
+
+        // Handle each layer type separately
+        switch (layer->type)
+        {
+        case LAYER_CONV:
+        {
+            ConvLayer *conv = (ConvLayer *)layer;
+
+            // Write the dimensions and number of filters
+            fwrite(&(conv->filter_width), sizeof(int), 1, file);
+            fwrite(&(conv->filter_height), sizeof(int), 1, file);
+            fwrite(&(conv->num_filters), sizeof(int), 1, file);
+
+            // Write the weights and biases
+            size_t num_weights = conv->filter_width * conv->filter_height * conv->num_filters;
+            fwrite(conv->weights, sizeof(float), num_weights, file);
+            fwrite(conv->biases, sizeof(float), conv->num_filters, file);
+            break;
+        }
+        case LAYER_POOL:
+        {
+            PoolLayer *pool = (PoolLayer *)layer;
+
+            // Write the pooling parameters
+            fwrite(&(pool->pool_width), sizeof(int), 1, file);
+            fwrite(&(pool->pool_height), sizeof(int), 1, file);
+            fwrite(&(pool->stride), sizeof(int), 1, file);
+            break;
+        }
+        case LAYER_FC:
+        {
+            FCLayer *fc = (FCLayer *)layer;
+
+            // Write the input and output sizes
+            fwrite(&(fc->input_size), sizeof(int), 1, file);
+            fwrite(&(fc->output_size), sizeof(int), 1, file);
+
+            // Write the weights and biases
+            size_t num_weights = fc->input_size * fc->output_size;
+            fwrite(fc->weights, sizeof(float), num_weights, file);
+            fwrite(fc->biases, sizeof(float), fc->output_size, file);
+            break;
+        }
+        default:
+            break;
+        }
+    }
+
+    fclose(file);
+    printf("Network saved successfully to %s\n", filename);
+}
+
+void train(Network *net, int ****training_matrix, int num_samples_per_char, int epochs, float initial_lr, float l2_lambda, float dropout_rate)
+{
     float *target = (float *)calloc(52, sizeof(float)); // 52 output classes (A-Z, a-z)
+    char expected_result[52] = {'A', 'a', 'B', 'b', 'C', 'c', 'D', 'd', 'E',
+                                'e', 'F', 'f', 'G', 'g', 'H', 'h', 'I', 'i',
+                                'J', 'j', 'K', 'k', 'L', 'l', 'M', 'm', 'N',
+                                'n', 'O', 'o', 'P', 'p', 'Q', 'q', 'R', 'r',
+                                'S', 's', 'T', 't', 'U', 'u', 'V', 'v', 'W',
+                                'w', 'X', 'x', 'Y', 'y', 'Z', 'z'};
 
     // Initialize early stopping
-    EarlyStopping *es = init_early_stopping(net, 10000); // patience of 10 epochs
+    EarlyStopping *es = init_early_stopping(net, 100); // patience of 10 epochs
 
     float learning_rate = initial_lr;
 
@@ -398,9 +474,11 @@ void train(Network *net, const char *filematrix, char *expected_result, int num_
         float total_loss = 0;
         int total_samples = 0;
 
+        shuffle_char(expected_result, 52);
+
         for (size_t i = 0; i < 52; i++)
         {
-            // Loop over all characters (A-Z, a-z)
+            // Determine the target index for the character
             char letter = expected_result[i];
             int target_index = (letter >= 'a') ? (letter - 'a' + 26) : (letter - 'A');
 
@@ -408,31 +486,18 @@ void train(Network *net, const char *filematrix, char *expected_result, int num_
             memset(target, 0, 52 * sizeof(float));
             target[target_index] = 1.0; // Set the target for current character
 
-            for (int j = 0; j < num_samples_per_char; j++)
+            for (int index = 0; index < num_samples_per_char; index++)
             {
-                // Loop over samples for each character
-                char *newpath = update_path(filematrix, strlen(filematrix), letter, j);
-                read_binary_image(newpath, input);
-
-                forward_pass_ocr(net, (float *)input, dropout_rate);
+                forward_pass_ocr(net, training_matrix[i][index][0], dropout_rate);
                 float loss = calculate_loss_with_l2(net, target, l2_lambda);
                 total_loss += loss;
                 total_samples++;
 
+                // Backward pass and parameter update
                 backward_pass(net, target);
                 update_parameters(net, learning_rate, l2_lambda);
-
-                // Optional debug display
-                if (DEBUG)
-                {
-                    char result = retrieve_answer(net);
-                    printf("Gave path : %s / Result expected was : %c / Result provided is : %c\n", newpath, letter, result);
-                }
-
-                free(newpath);
             }
         }
-
         // Calculate average loss for this epoch
         float avg_loss = total_loss / total_samples;
 
@@ -442,21 +507,26 @@ void train(Network *net, const char *filematrix, char *expected_result, int num_
             break;
         }
 
-        // Update learning rate
-        // update_learning_rate(&learning_rate, epoch, epochs, initial_lr);
-
         if (epoch % 10 == 0)
         {
             printf("Epoch %d, Average Loss: %f\n", epoch, avg_loss);
         }
     }
 
+    for (size_t i = 0; i < 52; i++)
+    {
+        for (int index = 0; index < num_samples_per_char; index++)
+        {
+            free(training_matrix[i][index][0]);
+            free(training_matrix[i][index]);
+        }
+        free(training_matrix[i]);
+    }
+    free(training_matrix);
+
     // Restore best parameters
     restore_best_params(net, es);
 
-    // printf("Best model found at epoch %d with validation loss %f\n", es->best_epoch, es->best_val_loss);
-
-    free(input);
     free(target);
     free_early_stopping(es);
 }

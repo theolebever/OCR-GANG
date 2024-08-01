@@ -21,7 +21,7 @@ char retrieve_char(size_t val);
 size_t expected_pos(char c);
 char *update_path(const char *filepath, size_t len, char c, size_t index);
 void input_from_txt(char *filepath, struct fnn *net);
-void prepare_training();
+int ****prepare_training();
 void free_chars_matrix(int **chars_matrix, int chars_count);
 void free_chars(SDL_Surface ***chars, int *charslen, int BlocCount);
 void free_surfaces(SDL_Surface **surfaces, int count);
@@ -32,5 +32,6 @@ double relu(double x);
 double drelu(double x);
 void restore_best_params(Network *net, EarlyStopping *es);
 char retrieve_answer(Network *net);
+void shuffle_char(char *array, size_t n);
 
 #endif

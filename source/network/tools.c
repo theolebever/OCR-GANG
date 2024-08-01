@@ -158,6 +158,20 @@ void load_network(const char *filename, struct fnn *network)
                 TRAINING NETWORK FUNCTIONS
    ################################################## */
 
+void shuffle_char(char *array, size_t n)
+{
+    if (n > 1)
+    {
+        for (size_t i = 0; i < n - 1; i++)
+        {
+            size_t j = i + rand() / (RAND_MAX / (n - i) + 1);
+            char t = array[j];
+            array[j] = array[i];
+            array[i] = t;
+        }
+    }
+}
+
 void shuffle(int *array, size_t n)
 {
     if (n > 1)
@@ -247,28 +261,25 @@ void read_binary_image(const char *filepath, double *arr)
     fclose(file);
 }
 
-void prepare_training()
+int ****prepare_training()
 {
     init_sdl();
     const char *base_filepath = "img/training/maj/A0.png";
-    const char *base_filematrix = "img/training/maj/A0.txt";
     char expected_result[52] = {'A', 'a', 'B', 'b', 'C', 'c', 'D', 'd', 'E',
                                 'e', 'F', 'f', 'G', 'g', 'H', 'h', 'I', 'i',
                                 'J', 'j', 'K', 'k', 'L', 'l', 'M', 'm', 'N',
                                 'n', 'O', 'o', 'P', 'p', 'Q', 'q', 'R', 'r',
                                 'S', 's', 'T', 't', 'U', 'u', 'V', 'v', 'W',
                                 'w', 'X', 'x', 'Y', 'y', 'Z', 'z'};
-    int **chars_matrix = NULL;
-    int nb = 52;
 
-    for (size_t i = 0; i < (size_t)nb; i++)
+    int ****all_chars_matrices = malloc(52 * sizeof(int ***)); // 52 for each expected result character
+    for (size_t i = 0; i < 52; i++)
     {
+        all_chars_matrices[i] = malloc(4 * sizeof(int **)); // Allocate space for 4 fonts for each character
         for (size_t index = 0; index < 4; index++)
         {
-            char *filepath = update_path(base_filepath, strlen(base_filepath),
-                                         expected_result[i], index);
-            char *filematrix = update_path(base_filematrix, strlen(base_filematrix),
-                                           expected_result[i], index);
+            all_chars_matrices[i][index] = NULL;
+            char *filepath = update_path(base_filepath, strlen(base_filepath), expected_result[i], index);
             SDL_Surface *image = load__image(filepath);
             image = black_and_white(image);
             DrawRedLines(image);
@@ -277,21 +288,13 @@ void prepare_training()
             SDL_Surface **blocs = malloc(sizeof(SDL_Surface *) * BlocCount);
             int *charslen = DivideIntoBlocs(image, blocs, chars, BlocCount);
 
+            int len = ImageToMatrix(chars, &all_chars_matrices[i][index], charslen, BlocCount);
+            (void)len;
+            // Free allocated memory
+            free(filepath);
             for (int j = 0; j < BlocCount; ++j)
             {
                 SDL_FreeSurface(blocs[j]);
-            }
-
-            int chars_count = ImageToMatrix(chars, &chars_matrix, charslen, BlocCount);
-            SaveMatrix(chars_matrix, filematrix);
-
-            // Free allocated memory
-            free(filepath);
-            free(filematrix);
-
-            // Free chars
-            for (int j = 0; j < BlocCount; ++j)
-            {
                 for (int k = 0; k < charslen[j]; ++k)
                 {
                     SDL_FreeSurface(chars[j][k]);
@@ -299,20 +302,13 @@ void prepare_training()
                 free(chars[j]);
             }
             free(chars);
-
             free(blocs);
             free(charslen);
             SDL_FreeSurface(image);
-
-            // Free chars_matrix
-            for (int j = 0; j < chars_count; ++j)
-            {
-                free(chars_matrix[j]);
-            }
-            free(chars_matrix);
-            chars_matrix = NULL;
         }
     }
+
+    return all_chars_matrices;
 }
 
 void restore_best_params(Network *net, EarlyStopping *es)
