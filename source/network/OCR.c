@@ -142,8 +142,6 @@ void forward_pass_ocr(Network *net, float *input_data)
     }
 }
 
-
-
 void backward_pass(Network *net, float *target)
 {
     // Determine the maximum size needed across all layers
@@ -206,6 +204,11 @@ void backward_pass(Network *net, float *target)
     }
 
     free(error);
+}
+
+void update_learning_rate(float *learning_rate, int epoch, int total_epochs, float initial_lr)
+{
+    *learning_rate = initial_lr * (1.0 - (float)epoch / total_epochs);
 }
 
 void update_parameters(Network *net, float learning_rate)
@@ -272,13 +275,15 @@ float calculate_loss(Network *net, float *target)
     return loss / output_layer->output_size;
 }
 
-void train(Network *net, const char *filematrix, char *expected_result, int num_samples_per_char, int epochs, float learning_rate)
+void train(Network *net, const char *filematrix, char *expected_result, int num_samples_per_char, int epochs, float initial_lr)
 {
     double *input = (double *)calloc(INPUT_HEIGHT * INPUT_WIDTH, sizeof(double));
     float *target = (float *)calloc(52, sizeof(float)); // 52 output classes (A-Z, a-z)
 
     // Initialize early stopping
-    EarlyStopping *es = init_early_stopping(net, 10); // patience of 10 epochs
+    EarlyStopping *es = init_early_stopping(net, 10000); // patience of 10 epochs
+
+    float learning_rate = initial_lr;
 
     for (int epoch = 0; epoch < epochs; epoch++)
     {
@@ -324,10 +329,13 @@ void train(Network *net, const char *filematrix, char *expected_result, int num_
         float avg_loss = total_loss / total_samples;
 
         // Check for early stopping
-        // if (should_stop(es, avg_loss, net, epoch))
-        // {
-        //     break;
-        // }
+        if (should_stop(es, avg_loss, net, epoch))
+        {
+            break;
+        }
+
+        // Update learning rate
+        update_learning_rate(&learning_rate, epoch, epochs, initial_lr);
 
         if (epoch % 10 == 0)
         {
@@ -344,7 +352,6 @@ void train(Network *net, const char *filematrix, char *expected_result, int num_
     free(target);
     free_early_stopping(es);
 }
-
 // Prediction Function
 int predict(Network *net, float *input)
 {
