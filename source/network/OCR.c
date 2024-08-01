@@ -107,7 +107,114 @@ void free_network_cnn(Network *net)
     free(net);
 }
 
-void forward_pass_ocr(Network *net, float *input_data)
+void softmax(float *input, int size)
+{
+    float max = input[0];
+    for (int i = 1; i < size; i++)
+    {
+        if (input[i] > max)
+        {
+            max = input[i];
+        }
+    }
+
+    float sum = 0.0f;
+    for (int i = 0; i < size; i++)
+    {
+        input[i] = expf(input[i] - max);
+        sum += input[i];
+    }
+
+    for (int i = 0; i < size; i++)
+    {
+        input[i] /= sum;
+    }
+}
+
+float calculate_loss_with_l2(Network *net, float *target, float l2_lambda)
+{
+    FCLayer *output_layer = (FCLayer *)net->layers[net->num_layers - 1];
+    float loss = 0;
+    float epsilon = 1e-10; // Small value to avoid log(0)
+
+    // Apply softmax to the output
+    softmax(output_layer->base.output->data, output_layer->output_size);
+
+    // Calculate cross-entropy loss
+    for (int i = 0; i < output_layer->output_size; i++)
+    {
+        float y = target[i];
+        float y_pred = output_layer->base.output->data[i];
+        loss -= y * logf(y_pred + epsilon);
+    }
+
+    // Add L2 regularization term
+    float l2_term = 0;
+    for (int i = 0; i < net->num_layers; i++)
+    {
+        if (net->layers[i]->type == LAYER_CONV)
+        {
+            ConvLayer *conv = (ConvLayer *)net->layers[i];
+            int weights_size = conv->filter_width * conv->filter_height * conv->base.input->depth * conv->num_filters;
+            for (int j = 0; j < weights_size; j++)
+            {
+                l2_term += conv->weights[j] * conv->weights[j];
+            }
+        }
+        else if (net->layers[i]->type == LAYER_FC)
+        {
+            FCLayer *fc = (FCLayer *)net->layers[i];
+            int weights_size = fc->input_size * fc->output_size;
+            for (int j = 0; j < weights_size; j++)
+            {
+                l2_term += fc->weights[j] * fc->weights[j];
+            }
+        }
+    }
+
+    loss = loss / output_layer->output_size + 0.5 * l2_lambda * l2_term;
+    return loss;
+}
+
+void apply_dropout(float *data, int size, float dropout_rate)
+{
+    for (int i = 0; i < size; i++)
+    {
+        if ((float)rand() / RAND_MAX < dropout_rate)
+        {
+            data[i] = 0;
+        }
+        else
+        {
+            data[i] /= (1 - dropout_rate);
+        }
+    }
+}
+
+void fc_forward_with_dropout(FCLayer *layer, Volume *input, float dropout_rate)
+{
+    // Allocate output if not already allocated
+    if (layer->base.output == NULL)
+    {
+        layer->base.output = create_volume(1, 1, layer->output_size);
+    }
+
+    for (int i = 0; i < layer->output_size; i++)
+    {
+        float sum = 0;
+        for (int j = 0; j < layer->input_size; j++)
+        {
+            sum += input->data[j] * layer->weights[i * layer->input_size + j];
+        }
+        sum += layer->biases[i];
+        layer->base.output->data[i] = relu(sum);
+    }
+
+    // Apply dropout
+    apply_dropout(layer->base.output->data, layer->output_size, dropout_rate);
+}
+
+void forward_pass_ocr(Network *net, float *input_data, float dropout_rate)
 {
     // Copy input data to the first layer's input
     Volume *first_layer_input = net->layers[0]->input;
@@ -121,9 +228,6 @@ void forward_pass_ocr(Network *net, float *input_data)
 
         switch (layer->type)
         {
-        case LAYER_INPUT:
-            // Input layer just passes the input volume
-            break;
         case LAYER_CONV:
             conv_forward((ConvLayer *)layer, layer_input);
             break;
@@ -131,12 +235,13 @@ void forward_pass_ocr(Network *net, float *input_data)
             pool_forward((PoolLayer *)layer, layer_input);
             break;
         case LAYER_FC:
-            fc_forward((FCLayer *)layer, layer_input);
+            fc_forward_with_dropout((FCLayer *)layer, layer_input, dropout_rate);
             break;
         case LAYER_OUTPUT:
-            // Output layer is typically a fully connected layer without ReLU
+            // Output layer is typically a fully connected layer without dropout
             fc_forward((FCLayer *)layer, layer_input);
-            // Apply softmax here if needed
+            break;
+        default:
             break;
         }
     }
@@ -211,7 +316,7 @@ void update_learning_rate(float *learning_rate, int epoch, int total_epochs, flo
     *learning_rate = initial_lr * (1.0 - (float)epoch / total_epochs);
 }
 
-void update_parameters(Network *net, float learning_rate)
+void update_parameters(Network *net, float learning_rate, float l2_lambda)
 {
     for (int i = 0; i < net->num_layers; i++)
     {
@@ -223,7 +328,7 @@ void update_parameters(Network *net, float learning_rate)
             int weight_size = layer->filter_width * layer->filter_height * layer->base.input->depth * layer->num_filters;
             for (int j = 0; j < weight_size; j++)
             {
-                layer->weights[j] -= learning_rate * layer->weight_gradients[j];
+                layer->weights[j] -= learning_rate * (layer->weight_gradients[j] + l2_lambda * layer->weights[j]);
                 layer->weight_gradients[j] = 0; // Reset gradients
             }
             for (int j = 0; j < layer->num_filters; j++)
@@ -239,7 +344,7 @@ void update_parameters(Network *net, float learning_rate)
             int weight_size = layer->input_size * layer->output_size;
             for (int j = 0; j < weight_size; j++)
             {
-                layer->weights[j] -= learning_rate * layer->weight_gradients[j];
+                layer->weights[j] -= learning_rate * (layer->weight_gradients[j] + l2_lambda * layer->weights[j]);
                 layer->weight_gradients[j] = 0; // Reset gradients
             }
             for (int j = 0; j < layer->output_size; j++)
@@ -263,19 +368,22 @@ float calculate_loss(Network *net, float *target)
 {
     FCLayer *output_layer = (FCLayer *)net->layers[net->num_layers - 1];
     float loss = 0;
-    float epsilon = 1e-10;
+    float epsilon = 1e-10; // Small value to avoid log(0)
+
+    // Apply softmax to the output
+    softmax(output_layer->base.output->data, output_layer->output_size);
 
     for (int i = 0; i < output_layer->output_size; i++)
     {
         float y = target[i];
         float y_pred = output_layer->base.output->data[i];
-        loss -= y * log(y_pred + epsilon);
+        loss -= y * logf(y_pred + epsilon);
     }
 
     return loss / output_layer->output_size;
 }
 
-void train(Network *net, const char *filematrix, char *expected_result, int num_samples_per_char, int epochs, float initial_lr)
+void train(Network *net, const char *filematrix, char *expected_result, int num_samples_per_char, int epochs, float initial_lr, float l2_lambda, float dropout_rate)
 {
     double *input = (double *)calloc(INPUT_HEIGHT * INPUT_WIDTH, sizeof(double));
     float *target = (float *)calloc(52, sizeof(float)); // 52 output classes (A-Z, a-z)
@@ -306,13 +414,13 @@ void train(Network *net, const char *filematrix, char *expected_result, int num_
                 char *newpath = update_path(filematrix, strlen(filematrix), letter, j);
                 read_binary_image(newpath, input);
 
-                forward_pass_ocr(net, (float *)input);
-                float loss = calculate_loss(net, target);
+                forward_pass_ocr(net, (float *)input, dropout_rate);
+                float loss = calculate_loss_with_l2(net, target, l2_lambda);
                 total_loss += loss;
                 total_samples++;
 
                 backward_pass(net, target);
-                update_parameters(net, learning_rate);
+                update_parameters(net, learning_rate, l2_lambda);
 
                 // Optional debug display
                 if (DEBUG)
@@ -335,7 +443,7 @@ void train(Network *net, const char *filematrix, char *expected_result, int num_
         }
 
         // Update learning rate
-        update_learning_rate(&learning_rate, epoch, epochs, initial_lr);
+        // update_learning_rate(&learning_rate, epoch, epochs, initial_lr);
 
         if (epoch % 10 == 0)
         {
@@ -346,30 +454,9 @@ void train(Network *net, const char *filematrix, char *expected_result, int num_
     // Restore best parameters
     restore_best_params(net, es);
 
-    printf("Best model found at epoch %d with validation loss %f\n", es->best_epoch, es->best_val_loss);
+    // printf("Best model found at epoch %d with validation loss %f\n", es->best_epoch, es->best_val_loss);
 
     free(input);
     free(target);
     free_early_stopping(es);
-}
-// Prediction Function
-int predict(Network *net, float *input)
-{
-    forward_pass_ocr(net, input);
-
-    // Assume the last layer is fully connected with outputs for each class
-    FCLayer *output_layer = (FCLayer *)net->layers[net->num_layers - 1];
-    float max_val = output_layer->base.output->data[0];
-    int max_idx = 0;
-
-    for (int i = 1; i < output_layer->output_size; i++)
-    {
-        if (output_layer->base.output->data[i] > max_val)
-        {
-            max_val = output_layer->base.output->data[i];
-            max_idx = i;
-        }
-    }
-
-    return max_idx;
 }
