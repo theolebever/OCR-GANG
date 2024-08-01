@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "tools.h"
+#include "adam.h"
 
 void add_fc_layer(Network *net, int layer_index, int input_size, int output_size)
 {
@@ -39,6 +40,10 @@ void add_fc_layer(Network *net, int layer_index, int input_size, int output_size
     fc->weight_gradients = (float *)calloc(weights_size, sizeof(float));
     fc->bias_gradients = (float *)calloc(output_size, sizeof(float));
 
+    // Setup Adam optimize
+    int param_count = input_size * output_size + output_size;
+    net->optimizers[layer_index] = init_adam(param_count, 0.9, 0.999, 1e-8);
+
     // Add layer to network
     net->layers[layer_index] = (Layer *)fc;
 }
@@ -46,11 +51,14 @@ void add_fc_layer(Network *net, int layer_index, int input_size, int output_size
 // Forward pass for fully connected layer
 void fc_forward(FCLayer *layer, Volume *input)
 {
-    // Allocate output if not already allocated
-    if (layer->base.output == NULL)
+    // Free previous output if allocated
+    if (layer->base.output != NULL)
     {
-        layer->base.output = create_volume(1, 1, layer->output_size);
+        free_volume(layer->base.output);
     }
+
+    // Allocate output volume
+    layer->base.output = create_volume(1, 1, layer->output_size);
 
     for (int i = 0; i < layer->output_size; i++)
     {
@@ -85,8 +93,7 @@ void fc_backward(Layer *layer, float *upstream_gradient)
     // Compute gradients for weights and biases
     for (int i = 0; i < fc->output_size; i++)
     {
-        float output = layer->output->data[i];
-        float error_derivative = output * (1 - output) * upstream_gradient[i];
+        float error_derivative = drelu(layer->output->data[i]) * upstream_gradient[i];
 
         for (int j = 0; j < fc->input_size; j++)
         {
@@ -96,7 +103,7 @@ void fc_backward(Layer *layer, float *upstream_gradient)
     }
 
     // Compute gradients for inputs (to be passed to previous layer)
-    float *input_gradients = calloc(fc->input_size, sizeof(float));
+    float *input_gradients = (float *)calloc(fc->input_size, sizeof(float));
     if (input_gradients == NULL)
     {
         fprintf(stderr, "Memory allocation failed in fc_backward\n");
@@ -108,8 +115,7 @@ void fc_backward(Layer *layer, float *upstream_gradient)
         float sum = 0;
         for (int j = 0; j < fc->output_size; j++)
         {
-            float output = layer->output->data[j];
-            float error_derivative = output * (1 - output) * upstream_gradient[j];
+            float error_derivative = drelu(layer->output->data[j]) * upstream_gradient[j];
             sum += error_derivative * fc->weights[j * fc->input_size + i];
         }
         input_gradients[i] = sum;

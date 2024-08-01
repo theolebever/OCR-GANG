@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "tools.h"
+#include "adam.h"
 
 // Function to add a convolutional layer
 void add_conv_layer(Network *net, int layer_index, int in_w, int in_h, int in_d,
@@ -74,6 +75,10 @@ void add_conv_layer(Network *net, int layer_index, int in_w, int in_h, int in_d,
         exit(EXIT_FAILURE);
     }
 
+    // Setup Adam optimizer
+    int param_count = filter_w * filter_h * in_d * num_filters + num_filters;
+    net->optimizers[layer_index] = init_adam(param_count, 0.9, 0.999, 1e-8);
+
     // Add layer to network
     net->layers[layer_index] = (Layer *)conv;
 }
@@ -129,7 +134,16 @@ void conv_backward(Layer *layer, float *upstream_gradient)
     int num_f = conv->num_filters;
 
     // Initialize gradients
-    float *input_gradients = calloc(in_w * in_h * in_d, sizeof(float));
+    float *input_gradients = (float *)calloc(in_w * in_h * in_d, sizeof(float));
+    if (!input_gradients)
+    {
+        perror("Memory allocation failed for input_gradients");
+        exit(EXIT_FAILURE);
+    }
+
+    // Initialize weight and bias gradients to zero
+    memset(conv->weight_gradients, 0, f_w * f_h * in_d * num_f * sizeof(float));
+    memset(conv->bias_gradients, 0, num_f * sizeof(float));
 
     // Compute gradients
     for (int f = 0; f < num_f; f++)
@@ -154,11 +168,17 @@ void conv_backward(Layer *layer, float *upstream_gradient)
                                 int in_idx = (iy * in_w + ix) * in_d + d;
                                 int w_idx = ((f * f_h + fy) * f_w + fx) * in_d + d;
 
+                                float input_val = layer->input->data[in_idx];
+
+                                // Accumulate the gradient for the input
                                 input_gradients[in_idx] += gradient * conv->weights[w_idx];
-                                conv->weight_gradients[w_idx] += gradient * layer->input->data[in_idx];
+
+                                // Accumulate the gradient for the weights
+                                conv->weight_gradients[w_idx] += gradient * input_val;
                             }
                         }
                     }
+                    // Accumulate the gradient for the biases
                     conv->bias_gradients[f] += gradient;
                 }
             }

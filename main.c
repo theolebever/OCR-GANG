@@ -46,7 +46,7 @@ int main(int argc, char **argv)
     {
         int ****training_matrix = prepare_training();
         Network *cnn = create_ocr_network();
-        train(cnn, training_matrix, 4, 1, 0.01, 0.0001, 0.5);
+        train(cnn, training_matrix, 4, NB_EPOCHS, 0.0001, 0.5);
         save_network_to_bin(cnn, "network.bin");
         free_network_cnn(cnn);
     }

@@ -10,8 +10,6 @@
 #include "tools.h"
 #include "early_stop.h"
 
-#define DEBUG 0
-
 Network *create_ocr_network()
 {
     Network *net = create_network(6); // 6 layers total
@@ -33,6 +31,7 @@ Network *create_network(int num_layers)
     Network *net = (Network *)malloc(sizeof(Network));
     net->num_layers = num_layers;
     net->layers = (Layer **)malloc(num_layers * sizeof(Layer *));
+    net->optimizers = (AdamOptimizer **)malloc(num_layers * sizeof(AdamOptimizer *));
     return net;
 }
 
@@ -129,51 +128,6 @@ void softmax(float *input, int size)
     {
         input[i] /= sum;
     }
-}
-
-float calculate_loss_with_l2(Network *net, float *target, float l2_lambda)
-{
-    FCLayer *output_layer = (FCLayer *)net->layers[net->num_layers - 1];
-    float loss = 0;
-    float epsilon = 1e-10; // Small value to avoid log(0)
-
-    // Apply softmax to the output
-    softmax(output_layer->base.output->data, output_layer->output_size);
-
-    // Calculate cross-entropy loss
-    for (int i = 0; i < output_layer->output_size; i++)
-    {
-        float y = target[i];
-        float y_pred = output_layer->base.output->data[i];
-        loss -= y * logf(y_pred + epsilon);
-    }
-
-    // Add L2 regularization term
-    float l2_term = 0;
-    for (int i = 0; i < net->num_layers; i++)
-    {
-        if (net->layers[i]->type == LAYER_CONV)
-        {
-            ConvLayer *conv = (ConvLayer *)net->layers[i];
-            int weights_size = conv->filter_width * conv->filter_height * conv->base.input->depth * conv->num_filters;
-            for (int j = 0; j < weights_size; j++)
-            {
-                l2_term += conv->weights[j] * conv->weights[j];
-            }
-        }
-        else if (net->layers[i]->type == LAYER_FC)
-        {
-            FCLayer *fc = (FCLayer *)net->layers[i];
-            int weights_size = fc->input_size * fc->output_size;
-            for (int j = 0; j < weights_size; j++)
-            {
-                l2_term += fc->weights[j] * fc->weights[j];
-            }
-        }
-    }
-
-    loss = loss / output_layer->output_size + 0.5 * l2_lambda * l2_term;
-    return loss;
 }
 
 void apply_dropout(float *data, int size, float dropout_rate)
@@ -315,7 +269,7 @@ void backward_pass(Network *net, float *target)
     free(error);
 }
 
-void update_parameters(Network *net, float learning_rate, float l2_lambda)
+void update_parameters(Network *net, float learning_rate)
 {
     for (int i = 0; i < net->num_layers; i++)
     {
@@ -325,32 +279,30 @@ void update_parameters(Network *net, float learning_rate, float l2_lambda)
         {
             ConvLayer *layer = (ConvLayer *)net->layers[i];
             int weight_size = layer->filter_width * layer->filter_height * layer->base.input->depth * layer->num_filters;
-            for (int j = 0; j < weight_size; j++)
-            {
-                layer->weights[j] -= learning_rate * (layer->weight_gradients[j] + l2_lambda * layer->weights[j]);
-                layer->weight_gradients[j] = 0; // Reset gradients
-            }
-            for (int j = 0; j < layer->num_filters; j++)
-            {
-                layer->biases[j] -= learning_rate * layer->bias_gradients[j];
-                layer->bias_gradients[j] = 0; // Reset gradients
-            }
+            // Update weights
+            adam_update(net->optimizers[i], layer->weights, layer->weight_gradients, weight_size, learning_rate);
+
+            // Update biases
+            adam_update(net->optimizers[i], layer->biases, layer->bias_gradients, layer->num_filters, learning_rate);
+
+            // Reset gradients
+            memset(layer->weight_gradients, 0, weight_size * sizeof(float));
+            memset(layer->bias_gradients, 0, layer->num_filters * sizeof(float));
             break;
         }
         case LAYER_FC:
         {
             FCLayer *layer = (FCLayer *)net->layers[i];
             int weight_size = layer->input_size * layer->output_size;
-            for (int j = 0; j < weight_size; j++)
-            {
-                layer->weights[j] -= learning_rate * (layer->weight_gradients[j] + l2_lambda * layer->weights[j]);
-                layer->weight_gradients[j] = 0; // Reset gradients
-            }
-            for (int j = 0; j < layer->output_size; j++)
-            {
-                layer->biases[j] -= learning_rate * layer->bias_gradients[j];
-                layer->bias_gradients[j] = 0; // Reset gradients
-            }
+            // Update weights
+            adam_update(net->optimizers[i], layer->weights, layer->weight_gradients, weight_size, learning_rate);
+
+            // Update biases
+            adam_update(net->optimizers[i], layer->biases, layer->bias_gradients, layer->output_size, learning_rate);
+
+            // Reset gradients
+            memset(layer->weight_gradients, 0, weight_size * sizeof(float));
+            memset(layer->bias_gradients, 0, layer->output_size * sizeof(float));
             break;
         }
         case LAYER_POOL:
@@ -372,6 +324,7 @@ float calculate_loss(Network *net, float *target)
     // Apply softmax to the output
     softmax(output_layer->base.output->data, output_layer->output_size);
 
+    // Calculate cross-entropy loss
     for (int i = 0; i < output_layer->output_size; i++)
     {
         float y = target[i];
@@ -454,7 +407,7 @@ void save_network_to_bin(Network *net, const char *filename)
     printf("Network saved successfully to %s\n", filename);
 }
 
-void train(Network *net, int ****training_matrix, int num_samples_per_char, int epochs, float initial_lr, float l2_lambda, float dropout_rate)
+void train(Network *net, int ****training_matrix, int num_samples_per_char, int epochs, float initial_lr, float dropout_rate)
 {
     float *target = (float *)calloc(52, sizeof(float)); // 52 output classes (A-Z, a-z)
     char expected_result[52] = {'A', 'a', 'B', 'b', 'C', 'c', 'D', 'd', 'E',
@@ -489,13 +442,13 @@ void train(Network *net, int ****training_matrix, int num_samples_per_char, int 
             for (int index = 0; index < num_samples_per_char; index++)
             {
                 forward_pass_ocr(net, training_matrix[i][index][0], dropout_rate);
-                float loss = calculate_loss_with_l2(net, target, l2_lambda);
+                float loss = calculate_loss(net, target);
                 total_loss += loss;
                 total_samples++;
 
                 // Backward pass and parameter update
                 backward_pass(net, target);
-                update_parameters(net, learning_rate, l2_lambda);
+                update_parameters(net, learning_rate);
             }
         }
         // Calculate average loss for this epoch
