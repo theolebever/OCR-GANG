@@ -33,5 +33,6 @@ double drelu(double x);
 void restore_best_params(Network *net, EarlyStopping *es);
 char retrieve_answer(Network *net);
 void shuffle_char(char *array, size_t n);
-
+float *im2col(Volume *input, int filter_height, int filter_width, int stride, int pad);
+void free_im2col(float *col);
 #endif

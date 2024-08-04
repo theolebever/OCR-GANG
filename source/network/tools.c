@@ -158,6 +158,67 @@ void load_network(const char *filename, struct fnn *network)
                 TRAINING NETWORK FUNCTIONS
    ################################################## */
 
+// Function to perform im2col operation
+float *im2col(Volume *input, int filter_height, int filter_width, int stride, int pad)
+{
+    int height = input->height;
+    int width = input->width;
+    int channels = input->depth;
+
+    int output_height = (height + 2 * pad - filter_height) / stride + 1;
+    int output_width = (width + 2 * pad - filter_width) / stride + 1;
+
+    int col_height = channels * filter_height * filter_width;
+    int col_width = output_height * output_width;
+
+    float *col = (float *)calloc(col_height * col_width, sizeof(float));
+    if (!col)
+    {
+        perror("Memory allocation failed in im2col");
+        exit(EXIT_FAILURE);
+    }
+
+    int c, h, w, fh, fw, col_index, input_index;
+
+    for (c = 0; c < channels; ++c)
+    {
+        for (h = 0; h < output_height; ++h)
+        {
+            for (w = 0; w < output_width; ++w)
+            {
+                for (fh = 0; fh < filter_height; ++fh)
+                {
+                    for (fw = 0; fw < filter_width; ++fw)
+                    {
+                        int im_row = h * stride + fh - pad;
+                        int im_col = w * stride + fw - pad;
+
+                        col_index = (c * filter_height * filter_width + fh * filter_width + fw) * col_width + h * output_width + w;
+
+                        if (im_row >= 0 && im_col >= 0 && im_row < height && im_col < width)
+                        {
+                            input_index = (im_row * width + im_col) * channels + c;
+                            col[col_index] = input->data[input_index];
+                        }
+                        else
+                        {
+                            col[col_index] = 0;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    return col;
+}
+
+// Function to free the memory allocated by im2col
+void free_im2col(float *col)
+{
+    free(col);
+}
+
 void shuffle_char(char *array, size_t n)
 {
     if (n > 1)
