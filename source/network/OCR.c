@@ -233,12 +233,13 @@ void backward_pass(Network *net, float *target)
     if (!error)
     {
         fprintf(stderr, "Failed to allocate memory for error in backward_pass\n");
-        return;
+        exit(EXIT_FAILURE);
     }
 
     // Initialize error for the output layer
-    int output_size = ((FCLayer *)net->layers[net->num_layers - 1])->output_size;
-    float *output = net->layers[net->num_layers - 1]->output->data;
+    FCLayer *output_layer = (FCLayer *)net->layers[net->num_layers - 1];
+    int output_size = output_layer->output_size;
+    float *output = output_layer->base.output->data;
     for (int i = 0; i < output_size; i++)
     {
         error[i] = output[i] - target[i];
@@ -247,21 +248,22 @@ void backward_pass(Network *net, float *target)
     // Backward pass through each layer
     for (int i = net->num_layers - 1; i >= 0; i--)
     {
-        switch (net->layers[i]->type)
+        Layer *layer = net->layers[i];
+        switch (layer->type)
         {
         case LAYER_CONV:
-            conv_backward(net->layers[i], error);
+            conv_backward(layer, error);
             break;
         case LAYER_POOL:
-            pool_backward(net->layers[i], error);
+            pool_backward(layer, error);
             break;
         case LAYER_FC:
-            fc_backward(net->layers[i], error);
+            fc_backward(layer, error);
             break;
         default:
-            fprintf(stderr, "Unknown layer type in backward pass\n");
+            fprintf(stderr, "Unknown layer type %d in backward pass\n", layer->type);
             free(error);
-            return;
+            exit(EXIT_FAILURE);
         }
 
         // Update error for next layer
@@ -326,8 +328,8 @@ void update_parameters(Network *net, float learning_rate)
 float calculate_loss(Network *net, float *target)
 {
     FCLayer *output_layer = (FCLayer *)net->layers[net->num_layers - 1];
-    float loss = 0;
-    float epsilon = 1e-10; // Small value to avoid log(0)
+    float loss = 0.0f;
+    float epsilon = 1e-10f; // Small value to avoid log(0)
 
     // Apply softmax to the output
     softmax(output_layer->base.output->data, output_layer->output_size);
@@ -340,7 +342,7 @@ float calculate_loss(Network *net, float *target)
         loss -= y * logf(y_pred + epsilon);
     }
 
-    return loss / output_layer->output_size;
+    return loss;
 }
 
 void train(Network *net, int ****training_matrix, int num_samples_per_char, int epochs, float initial_lr)

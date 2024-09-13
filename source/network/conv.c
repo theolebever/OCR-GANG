@@ -42,6 +42,7 @@ void add_conv_layer(Network *net, int layer_index, int in_w, int in_h, int in_d,
     conv->filter_width = filter_w;
     conv->filter_height = filter_h;
     conv->num_filters = num_filters;
+    conv->input_depth = in_d;
 
     // Allocate and initialize weights
     int weights_size = filter_w * filter_h * in_d * num_filters;
@@ -83,48 +84,44 @@ void add_conv_layer(Network *net, int layer_index, int in_w, int in_h, int in_d,
     net->layers[layer_index] = (Layer *)conv;
 }
 
-// Forward pass for convolutional layer
 void conv_forward(ConvLayer *layer, Volume *input)
 {
-    int out_h = (input->height - layer->filter_height + 1);
-    int out_w = (input->width - layer->filter_width + 1);
+    int out_h = input->height - layer->filter_height + 1;
+    int out_w = input->width - layer->filter_width + 1;
 
     if (layer->base.output == NULL)
     {
         layer->base.output = create_volume(out_w, out_h, layer->num_filters);
     }
 
-    // Perform im2col
-    float *col = im2col(input, layer->filter_height, layer->filter_width, 1, 0);
-
-    // Perform matrix multiplication
+    // Perform convolution
     for (int f = 0; f < layer->num_filters; f++)
     {
         for (int y = 0; y < out_h; y++)
         {
             for (int x = 0; x < out_w; x++)
             {
-                float sum = 0;
-                for (int c = 0; c < input->depth; c++)
+                float sum = 0.0f;
+                for (int c = 0; c < layer->input_depth; c++)
                 {
                     for (int fh = 0; fh < layer->filter_height; fh++)
                     {
                         for (int fw = 0; fw < layer->filter_width; fw++)
                         {
-                            int col_idx = (c * layer->filter_height * layer->filter_width + fh * layer->filter_width + fw) * (out_h * out_w) + y * out_w + x;
-                            int weight_idx = (f * input->depth + c) * layer->filter_height * layer->filter_width + fh * layer->filter_width + fw;
-                            sum += col[col_idx] * layer->weights[weight_idx];
+                            int in_y = y + fh;
+                            int in_x = x + fw;
+                            int input_idx = (in_y * input->width + in_x) * layer->input_depth + c;
+                            int weight_idx = ((f * layer->input_depth + c) * layer->filter_height + fh) * layer->filter_width + fw;
+                            sum += input->data[input_idx] * layer->weights[weight_idx];
                         }
                     }
                 }
                 sum += layer->biases[f];
-                layer->base.output->data[(y * out_w + x) * layer->num_filters + f] = relu(sum);
+                int out_idx = (y * out_w + x) * layer->num_filters + f;
+                layer->base.output->data[out_idx] = relu(sum);
             }
         }
     }
-
-    // Free the memory allocated by im2col
-    free_im2col(col);
 }
 
 void conv_backward(Layer *layer, float *upstream_gradient)

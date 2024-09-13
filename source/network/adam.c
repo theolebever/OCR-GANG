@@ -33,15 +33,17 @@ AdamOptimizer *init_adam(int param_count, float beta1, float beta2, float epsilo
 void adam_update(AdamOptimizer *adam, float *params, float *grads, int param_count, float learning_rate)
 {
     adam->t++;
-    float lr_t = learning_rate * sqrtf(1 - powf(adam->beta2, adam->t)) / (1 - powf(adam->beta1, adam->t));
+    float beta1_pow_t = powf(adam->beta1, adam->t);
+    float beta2_pow_t = powf(adam->beta2, adam->t);
+    float lr_t = learning_rate * sqrtf(1.0f - beta2_pow_t) / (1.0f - beta1_pow_t);
 
     for (int i = 0; i < param_count; i++)
     {
-        adam->m[i] = adam->beta1 * adam->m[i] + (1 - adam->beta1) * grads[i];
-        adam->v[i] = adam->beta2 * adam->v[i] + (1 - adam->beta2) * grads[i] * grads[i];
+        adam->m[i] = adam->beta1 * adam->m[i] + (1.0f - adam->beta1) * grads[i];
+        adam->v[i] = adam->beta2 * adam->v[i] + (1.0f - adam->beta2) * grads[i] * grads[i];
 
-        float m_hat = adam->m[i] / (1 - powf(adam->beta1, adam->t));
-        float v_hat = adam->v[i] / (1 - powf(adam->beta2, adam->t));
+        float m_hat = adam->m[i] / (1.0f - beta1_pow_t);
+        float v_hat = adam->v[i] / (1.0f - beta2_pow_t);
 
         params[i] -= lr_t * m_hat / (sqrtf(v_hat) + adam->epsilon);
     }

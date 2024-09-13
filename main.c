@@ -15,7 +15,7 @@
 #include <math.h>
 
 #define UNUSED(x) (void)(x)
-#define NB_EPOCHS 10
+#define NB_EPOCHS 100
 
 void print_usage()
 {
