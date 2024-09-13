@@ -26,12 +26,41 @@ Network *create_ocr_network()
 }
 
 // Function to create a new network
+// Function to create a new network
 Network *create_network(int num_layers)
 {
     Network *net = (Network *)malloc(sizeof(Network));
+    if (!net)
+    {
+        perror("Failed to allocate memory for Network");
+        exit(EXIT_FAILURE);
+    }
     net->num_layers = num_layers;
+
     net->layers = (Layer **)malloc(num_layers * sizeof(Layer *));
+    if (!net->layers)
+    {
+        perror("Failed to allocate memory for layers");
+        free(net);
+        exit(EXIT_FAILURE);
+    }
+
     net->optimizers = (AdamOptimizer **)malloc(num_layers * sizeof(AdamOptimizer *));
+    if (!net->optimizers)
+    {
+        perror("Failed to allocate memory for optimizers");
+        free(net->layers);
+        free(net);
+        exit(EXIT_FAILURE);
+    }
+
+    // Initialize optimizers and layers to NULL
+    for (int i = 0; i < num_layers; i++)
+    {
+        net->layers[i] = NULL;
+        net->optimizers[i] = NULL;
+    }
+
     return net;
 }
 
@@ -42,7 +71,7 @@ void free_network_cnn(Network *net)
         return;
     }
 
-    // First, free all layer-specific resources
+    // Free layer-specific resources
     for (int i = 0; i < net->num_layers; i++)
     {
         if (net->layers[i] == NULL)
@@ -50,11 +79,13 @@ void free_network_cnn(Network *net)
             continue;
         }
 
-        switch (net->layers[i]->type)
+        Layer *layer = net->layers[i];
+
+        switch (layer->type)
         {
         case LAYER_CONV:
         {
-            ConvLayer *conv = (ConvLayer *)net->layers[i];
+            ConvLayer *conv = (ConvLayer *)layer;
             free(conv->weights);
             free(conv->biases);
             free(conv->weight_gradients);
@@ -63,13 +94,13 @@ void free_network_cnn(Network *net)
         }
         case LAYER_POOL:
         {
-            PoolLayer *pool = (PoolLayer *)net->layers[i];
+            PoolLayer *pool = (PoolLayer *)layer;
             free(pool->max_indices);
             break;
         }
         case LAYER_FC:
         {
-            FCLayer *fc = (FCLayer *)net->layers[i];
+            FCLayer *fc = (FCLayer *)layer;
             free(fc->weights);
             free(fc->biases);
             free(fc->weight_gradients);
@@ -77,32 +108,51 @@ void free_network_cnn(Network *net)
             break;
         }
         default:
-            // Handle unknown layer types or add more cases as needed
+            fprintf(stderr, "Unknown layer type in free_network_cnn\n");
             break;
         }
+
+        // Free input and output volumes if not already freed
+        if (layer->input)
+        {
+            if (layer->input->data)
+            {
+                free(layer->input->data);
+            }
+            free(layer->input);
+            layer->input = NULL;
+        }
+        if (layer->output)
+        {
+            if (layer->output->data)
+            {
+                free(layer->output->data);
+            }
+            free(layer->output);
+            layer->output = NULL;
+        }
+
+        free(layer);
+        net->layers[i] = NULL;
     }
 
-    // Now, free input, output volumes and optimizers
+    // Free optimizers
     for (int i = 0; i < net->num_layers; i++)
     {
-        if (net->layers[i]->input && (i == 0 || net->layers[i]->input != net->layers[i - 1]->output))
+        if (net->optimizers[i])
         {
-            free(net->layers[i]->input->data);
-            free(net->layers[i]->input);
-        }
-        if (net->layers[i]->output)
-        {
-            free(net->layers[i]->output->data);
-            free(net->layers[i]->output);
+            free_adam(net->optimizers[i]);
+            net->optimizers[i] = NULL;
         }
     }
+    free(net->optimizers);
+    net->optimizers = NULL;
 
-    // Finally, free the layers themselves and the network structure
-    for (int i = 0; i < net->num_layers; i++)
-    {
-        free(net->layers[i]);
-    }
+    // Free layers array
     free(net->layers);
+    net->layers = NULL;
+
+    // Free the network structure
     free(net);
 }
 
@@ -130,45 +180,7 @@ void softmax(float *input, int size)
     }
 }
 
-void apply_dropout(float *data, int size, float dropout_rate)
-{
-    for (int i = 0; i < size; i++)
-    {
-        if ((float)rand() / RAND_MAX < dropout_rate)
-        {
-            data[i] = 0;
-        }
-        else
-        {
-            data[i] /= (1 - dropout_rate);
-        }
-    }
-}
-
-void fc_forward_with_dropout(FCLayer *layer, Volume *input, float dropout_rate)
-{
-    // Allocate output if not already allocated
-    if (layer->base.output == NULL)
-    {
-        layer->base.output = create_volume(1, 1, layer->output_size);
-    }
-
-    for (int i = 0; i < layer->output_size; i++)
-    {
-        float sum = 0;
-        for (int j = 0; j < layer->input_size; j++)
-        {
-            sum += input->data[j] * layer->weights[i * layer->input_size + j];
-        }
-        sum += layer->biases[i];
-        layer->base.output->data[i] = relu(sum);
-    }
-
-    // Apply dropout
-    apply_dropout(layer->base.output->data, layer->output_size, dropout_rate);
-}
-
-void forward_pass_ocr(Network *net, int *input_data, float dropout_rate)
+void forward_pass_ocr(Network *net, int *input_data)
 {
     // Copy input data to the first layer's input
     Volume *first_layer_input = net->layers[0]->input;
@@ -193,10 +205,6 @@ void forward_pass_ocr(Network *net, int *input_data, float dropout_rate)
             pool_forward((PoolLayer *)layer, layer_input);
             break;
         case LAYER_FC:
-            fc_forward_with_dropout((FCLayer *)layer, layer_input, dropout_rate);
-            break;
-        case LAYER_OUTPUT:
-            // Output layer is typically a fully connected layer without dropout
             fc_forward((FCLayer *)layer, layer_input);
             break;
         default:
@@ -335,81 +343,15 @@ float calculate_loss(Network *net, float *target)
     return loss / output_layer->output_size;
 }
 
-// Function to save the network to a binary file
-void save_network_to_bin(Network *net, const char *filename)
-{
-    FILE *file = fopen(filename, "wb");
-    if (file == NULL)
-    {
-        perror("Error opening file");
-        return;
-    }
-
-    // Write the number of layers
-    fwrite(&(net->num_layers), sizeof(int), 1, file);
-
-    // Iterate through each layer and save its parameters
-    for (int i = 0; i < net->num_layers; ++i)
-    {
-        Layer *layer = net->layers[i];
-
-        // Write the layer type
-        fwrite(&(layer->type), sizeof(LayerType), 1, file);
-
-        // Handle each layer type separately
-        switch (layer->type)
-        {
-        case LAYER_CONV:
-        {
-            ConvLayer *conv = (ConvLayer *)layer;
-
-            // Write the dimensions and number of filters
-            fwrite(&(conv->filter_width), sizeof(int), 1, file);
-            fwrite(&(conv->filter_height), sizeof(int), 1, file);
-            fwrite(&(conv->num_filters), sizeof(int), 1, file);
-
-            // Write the weights and biases
-            size_t num_weights = conv->filter_width * conv->filter_height * conv->num_filters;
-            fwrite(conv->weights, sizeof(float), num_weights, file);
-            fwrite(conv->biases, sizeof(float), conv->num_filters, file);
-            break;
-        }
-        case LAYER_POOL:
-        {
-            PoolLayer *pool = (PoolLayer *)layer;
-
-            // Write the pooling parameters
-            fwrite(&(pool->pool_width), sizeof(int), 1, file);
-            fwrite(&(pool->pool_height), sizeof(int), 1, file);
-            fwrite(&(pool->stride), sizeof(int), 1, file);
-            break;
-        }
-        case LAYER_FC:
-        {
-            FCLayer *fc = (FCLayer *)layer;
-
-            // Write the input and output sizes
-            fwrite(&(fc->input_size), sizeof(int), 1, file);
-            fwrite(&(fc->output_size), sizeof(int), 1, file);
-
-            // Write the weights and biases
-            size_t num_weights = fc->input_size * fc->output_size;
-            fwrite(fc->weights, sizeof(float), num_weights, file);
-            fwrite(fc->biases, sizeof(float), fc->output_size, file);
-            break;
-        }
-        default:
-            break;
-        }
-    }
-
-    fclose(file);
-    printf("Network saved successfully to %s\n", filename);
-}
-
-void train(Network *net, int ****training_matrix, int num_samples_per_char, int epochs, float initial_lr, float dropout_rate)
+void train(Network *net, int ****training_matrix, int num_samples_per_char, int epochs, float initial_lr)
 {
     float *target = (float *)calloc(52, sizeof(float)); // 52 output classes (A-Z, a-z)
+    if (!target)
+    {
+        perror("Memory allocation failed for target");
+        exit(EXIT_FAILURE);
+    }
+
     char expected_result[52] = {'A', 'a', 'B', 'b', 'C', 'c', 'D', 'd', 'E',
                                 'e', 'F', 'f', 'G', 'g', 'H', 'h', 'I', 'i',
                                 'J', 'j', 'K', 'k', 'L', 'l', 'M', 'm', 'N',
@@ -418,7 +360,13 @@ void train(Network *net, int ****training_matrix, int num_samples_per_char, int 
                                 'w', 'X', 'x', 'Y', 'y', 'Z', 'z'};
 
     // Initialize early stopping
-    EarlyStopping *es = init_early_stopping(net, 100); // patience of 10 epochs
+    EarlyStopping *es = init_early_stopping(net, 10); // patience of 10 epochs
+    if (!es)
+    {
+        perror("Failed to initialize early stopping");
+        free(target);
+        exit(EXIT_FAILURE);
+    }
 
     float learning_rate = initial_lr;
 
@@ -437,11 +385,11 @@ void train(Network *net, int ****training_matrix, int num_samples_per_char, int 
 
             // Reset all targets to 0.0
             memset(target, 0, 52 * sizeof(float));
-            target[target_index] = 1.0; // Set the target for current character
+            target[target_index] = 1.0f; // Set the target for current character
 
             for (int index = 0; index < num_samples_per_char; index++)
             {
-                forward_pass_ocr(net, training_matrix[i][index][0], dropout_rate);
+                forward_pass_ocr(net, training_matrix[i][index][0]);
                 float loss = calculate_loss(net, target);
                 total_loss += loss;
                 total_samples++;
@@ -454,9 +402,10 @@ void train(Network *net, int ****training_matrix, int num_samples_per_char, int 
         // Calculate average loss for this epoch
         float avg_loss = total_loss / total_samples;
 
-        // Check for early stopping
+        // // Check for early stopping
         // if (should_stop(es, avg_loss, net, epoch))
         // {
+        //     printf("Early stopping at epoch %d\n", epoch);
         //     break;
         // }
 
@@ -466,20 +415,10 @@ void train(Network *net, int ****training_matrix, int num_samples_per_char, int 
         }
     }
 
-    for (size_t i = 0; i < 52; i++)
-    {
-        for (int index = 0; index < num_samples_per_char; index++)
-        {
-            free(training_matrix[i][index][0]);
-            free(training_matrix[i][index]);
-        }
-        free(training_matrix[i]);
-    }
-    free(training_matrix);
-
     // Restore best parameters
     restore_best_params(net, es);
 
-    free(target);
+    // Free resources
     free_early_stopping(es);
+    free(target);
 }

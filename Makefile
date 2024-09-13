@@ -1,8 +1,8 @@
 # Compiler and flags
 CC := gcc
 CPPFLAGS := $(shell pkg-config --cflags sdl gtk+-3.0) -MMD
-CFLAGS := -Wall -Wextra -Werror -std=c99 -fopenmp
-LDFLAGS := -rdynamic -fopenmp
+CFLAGS := -Wall -Wextra -Werror -std=c99
+LDFLAGS := -rdynamic
 LDLIBS := $(shell pkg-config --libs sdl gtk+-3.0) -lSDL_image -lm
 
 # Debug flags
@@ -31,6 +31,7 @@ SRC := main.c \
     $(SRC_DIR)/network/conv.c \
     $(SRC_DIR)/network/volume.c \
     $(SRC_DIR)/network/adam.c \
+    $(SRC_DIR)/network/training.c \
     $(SRC_DIR)/GUI/gui.c
 
 # Object files

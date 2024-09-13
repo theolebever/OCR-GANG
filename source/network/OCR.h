@@ -27,10 +27,13 @@ typedef struct Layer
 } Layer;
 
 // Convolutional layer
-typedef struct
+typedef struct ConvLayer
 {
     Layer base;
-    int filter_width, filter_height, num_filters;
+    int filter_width;
+    int filter_height;
+    int num_filters;
+    int input_depth; // Added input_depth
     float *weights;
     float *biases;
     float *weight_gradients;
@@ -67,12 +70,12 @@ typedef struct
 Network *create_ocr_network();
 Network *create_network(int num_layers);
 void free_network_cnn(Network *net);
-void forward_pass_ocr(Network *net, int *input_data, float dropout_rate);
+void forward_pass_ocr(Network *net, int *input_data);
 void backward_pass(Network *net, float *target);
 void update_parameters(Network *net, float learning_rate);
 Volume *create_volume(int width, int height, int depth);
 void free_volume(Volume *vol);
-void train(Network *net, int ****training_matrix, int num_samples_per_char, int epochs, float initial_lr, float dropout_rate);
+void train(Network *net, int ****training_matrix, int num_samples_per_char, int epochs, float initial_lr);
 int predict(Network *net, float *input);
 char retrieve_answer(Network *net);
 void save_network_to_bin(Network *net, const char *filename);

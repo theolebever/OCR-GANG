@@ -330,56 +330,6 @@ void read_binary_image(const char *filepath, double *arr)
     fclose(file);
 }
 
-int ****prepare_training()
-{
-    init_sdl();
-    const char *base_filepath = "img/training/maj/A0.png";
-    char expected_result[52] = {'A', 'a', 'B', 'b', 'C', 'c', 'D', 'd', 'E',
-                                'e', 'F', 'f', 'G', 'g', 'H', 'h', 'I', 'i',
-                                'J', 'j', 'K', 'k', 'L', 'l', 'M', 'm', 'N',
-                                'n', 'O', 'o', 'P', 'p', 'Q', 'q', 'R', 'r',
-                                'S', 's', 'T', 't', 'U', 'u', 'V', 'v', 'W',
-                                'w', 'X', 'x', 'Y', 'y', 'Z', 'z'};
-
-    int ****all_chars_matrices = malloc(52 * sizeof(int ***)); // 52 for each expected result character
-    for (size_t i = 0; i < 52; i++)
-    {
-        all_chars_matrices[i] = malloc(50 * sizeof(int **)); // Allocate space for 4 fonts for each character
-        for (size_t index = 0; index < 50; index++)
-        {
-            all_chars_matrices[i][index] = NULL;
-            char *filepath = update_path(base_filepath, strlen(base_filepath), expected_result[i], index);
-            SDL_Surface *image = load__image(filepath);
-            image = black_and_white(image);
-            DrawRedLines(image);
-            int BlocCount = CountBlocs(image);
-            SDL_Surface ***chars = malloc(sizeof(SDL_Surface **) * BlocCount);
-            SDL_Surface **blocs = malloc(sizeof(SDL_Surface *) * BlocCount);
-            int *charslen = DivideIntoBlocs(image, blocs, chars, BlocCount);
-
-            int len = ImageToMatrix(chars, &all_chars_matrices[i][index], charslen, BlocCount);
-            (void)len;
-            // Free allocated memory
-            free(filepath);
-            for (int j = 0; j < BlocCount; ++j)
-            {
-                SDL_FreeSurface(blocs[j]);
-                for (int k = 0; k < charslen[j]; ++k)
-                {
-                    SDL_FreeSurface(chars[j][k]);
-                }
-                free(chars[j]);
-            }
-            free(chars);
-            free(blocs);
-            free(charslen);
-            SDL_FreeSurface(image);
-        }
-    }
-
-    return all_chars_matrices;
-}
-
 void restore_best_params(Network *net, EarlyStopping *es)
 {
     int idx = 0;

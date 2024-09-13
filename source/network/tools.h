@@ -21,7 +21,6 @@ char retrieve_char(size_t val);
 size_t expected_pos(char c);
 char *update_path(const char *filepath, size_t len, char c, size_t index);
 void input_from_txt(char *filepath, struct fnn *net);
-int ****prepare_training();
 void free_chars_matrix(int **chars_matrix, int chars_count);
 void free_chars(SDL_Surface ***chars, int *charslen, int BlocCount);
 void free_surfaces(SDL_Surface **surfaces, int count);

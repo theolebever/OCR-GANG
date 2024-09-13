@@ -11,10 +11,11 @@
 #include "source/segmentation/segmentation.h"
 #include "source/network/XOR.h"
 #include "source/network/OCR.h"
+#include "source/network/training.h"
 #include <math.h>
 
 #define UNUSED(x) (void)(x)
-#define NB_EPOCHS 1000
+#define NB_EPOCHS 10
 
 void print_usage()
 {
@@ -44,11 +45,11 @@ int main(int argc, char **argv)
     }
     else if (strcmp(argv[1], "--train") == 0)
     {
-        int ****training_matrix = prepare_training();
+        TrainingData *training_data = prepare_training();
         Network *cnn = create_ocr_network();
-        train(cnn, training_matrix, 50, NB_EPOCHS, 0.0001, 0.5);
-        save_network_to_bin(cnn, "network.bin");
+        train(cnn, training_data->data, 10, NB_EPOCHS, 0.0001);
         free_network_cnn(cnn);
+        free_training_data(training_data);
     }
     else
     {
