@@ -19,8 +19,8 @@ Network *create_ocr_network()
     add_pool_layer(net, 1, 18, 18, 32, 2, 2, 2);
     add_conv_layer(net, 2, 9, 9, 32, 3, 3, 64);
     add_pool_layer(net, 3, 7, 7, 64, 2, 2, 2);
-    add_fc_layer(net, 4, 3 * 3 * 64, 128);
-    add_fc_layer(net, 5, 128, 52);
+    add_fc_layer(net, 4, 3 * 3 * 64, 128, true);
+    add_fc_layer(net, 5, 128, 52, false);
 
     return net;
 }

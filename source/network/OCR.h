@@ -7,6 +7,7 @@
 
 #include "volume.h"
 #include "adam.h"
+#include <stdbool.h>
 
 // Define layer types
 typedef enum
@@ -57,6 +58,7 @@ typedef struct
     float *biases;
     float *weight_gradients;
     float *bias_gradients;
+    bool apply_activation;
 } FCLayer;
 
 // Network structure

@@ -4,8 +4,9 @@
 #include <string.h>
 #include "tools.h"
 #include "adam.h"
+#include <stdbool.h>
 
-void add_fc_layer(Network *net, int layer_index, int input_size, int output_size)
+void add_fc_layer(Network *net, int layer_index, int input_size, int output_size, bool apply_activation)
 {
     FCLayer *fc = (FCLayer *)malloc(sizeof(FCLayer));
     fc->base.type = LAYER_FC;
@@ -40,6 +41,8 @@ void add_fc_layer(Network *net, int layer_index, int input_size, int output_size
     fc->weight_gradients = (float *)calloc(weights_size, sizeof(float));
     fc->bias_gradients = (float *)calloc(output_size, sizeof(float));
 
+    fc->apply_activation = apply_activation; // Set the flag
+
     // Setup Adam optimize
     int param_count = input_size * output_size + output_size;
     net->optimizers[layer_index] = init_adam(param_count, 0.9, 0.999, 1e-8);
@@ -64,7 +67,14 @@ void fc_forward(FCLayer *layer, Volume *input)
             sum += input->data[j] * layer->weights[i * layer->input_size + j];
         }
         sum += layer->biases[i];
-        layer->base.output->data[i] = relu(sum);
+        if (layer->apply_activation)
+        {
+            layer->base.output->data[i] = relu(sum);
+        }
+        else
+        {
+            layer->base.output->data[i] = sum; // No activation
+        }
     }
 }
 
@@ -89,7 +99,11 @@ void fc_backward(Layer *layer, float *upstream_gradient)
     // Compute gradients for weights and biases
     for (int i = 0; i < fc->output_size; i++)
     {
-        float error_derivative = drelu(layer->output->data[i]) * upstream_gradient[i];
+        float error_derivative = upstream_gradient[i];
+        if (fc->apply_activation)
+        {
+            error_derivative *= drelu(layer->output->data[i]);
+        }
 
         for (int j = 0; j < fc->input_size; j++)
         {
