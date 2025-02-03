@@ -70,12 +70,9 @@ double init_weight()
 
 int file_exists(const char *filename)
 {
-    /* try to open file to read */
-    FILE *file;
-    file = fopen(filename, "r");
+    FILE *file = fopen(filename, "r");
     if (!file)
     {
-        fclose(file);
         return 0;
     }
     fclose(file);
