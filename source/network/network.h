@@ -38,4 +38,6 @@ void updateweightsetbiases(struct network *net);
 
 int InputImage(struct network *net, size_t index, int ***chars_matrix);
 
+void freeNetwork(struct network *net);
+
 #endif

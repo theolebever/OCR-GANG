@@ -6,8 +6,29 @@
 #include <err.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "tools.h"
+
+void freeNetwork(struct network *net)
+{
+    if (net != NULL)
+    {
+        free(net->input_layer);
+        free(net->hidden_layer);
+        free(net->delta_hidden);
+        free(net->hidden_layer_bias);
+        free(net->hidden_weights);
+        free(net->delta_hidden_weights);
+        free(net->output_layer);
+        free(net->delta_output);
+        free(net->output_layer_bias);
+        free(net->output_weights);
+        free(net->delta_output_weights);
+        free(net->goal);
+        free(net);
+    }
+}
 
 struct network *InitializeNetwork(double i, double h, double o, char *filepath)
 {
@@ -19,7 +40,27 @@ struct network *InitializeNetwork(double i, double h, double o, char *filepath)
     network->number_of_inputs = i;
     network->number_of_hidden_nodes = h;
     network->number_of_outputs = o;
+
+    // Initialize all pointers to NULL to ensure safe cleanup on error
+    network->input_layer = NULL;
+    network->hidden_layer = NULL;
+    network->delta_hidden = NULL;
+    network->hidden_layer_bias = NULL;
+    network->hidden_weights = NULL;
+    network->delta_hidden_weights = NULL;
+    network->output_layer = NULL;
+    network->delta_output = NULL;
+    network->output_layer_bias = NULL;
+    network->output_weights = NULL;
+    network->delta_output_weights = NULL;
+    network->goal = NULL;
+
     network->input_layer = calloc(network->number_of_inputs, sizeof(double));
+    if (network->input_layer == NULL)
+    {
+        freeNetwork(network);
+        errx(1, "Not enough memory!");
+    }
 
     network->hidden_layer =
         calloc(network->number_of_hidden_nodes, sizeof(double));
@@ -34,6 +75,14 @@ struct network *InitializeNetwork(double i, double h, double o, char *filepath)
         calloc(network->number_of_inputs * network->number_of_hidden_nodes,
                sizeof(double));
 
+    if (network->hidden_layer == NULL || network->delta_hidden == NULL ||
+        network->hidden_layer_bias == NULL || network->hidden_weights == NULL ||
+        network->delta_hidden_weights == NULL)
+    {
+        freeNetwork(network);
+        errx(1, "Not enough memory!");
+    }
+
     network->output_layer = calloc(network->number_of_outputs, sizeof(double));
     network->delta_output = calloc(network->number_of_outputs, sizeof(double));
     network->output_layer_bias =
@@ -44,13 +93,23 @@ struct network *InitializeNetwork(double i, double h, double o, char *filepath)
     network->delta_output_weights =
         calloc(network->number_of_hidden_nodes * network->number_of_outputs,
                sizeof(double));
-
     network->goal = calloc(network->number_of_outputs, sizeof(double));
+
+    if (network->output_layer == NULL || network->delta_output == NULL ||
+        network->output_layer_bias == NULL || network->output_weights == NULL ||
+        network->delta_output_weights == NULL || network->goal == NULL)
+    {
+        freeNetwork(network);
+        errx(1, "Not enough memory!");
+    }
+
     network->eta = 0.5f;
     network->alpha = 0.9f;
 
-    if (!fileempty(filepath))
+    if (filepath != NULL && !fileempty(filepath))
     {
+        // Since load_network is a void function, we can't check its return value
+        // Just call it directly
         load_network(filepath, network);
     }
     else
@@ -91,8 +150,7 @@ void forward_pass(struct network *net)
         double activation = net->hidden_layer_bias[j];
         for (int k = 0; k < net->number_of_inputs; k++)
         {
-            activation += net->input_layer[k]
-                * net->hidden_weights[k * net->number_of_hidden_nodes + j];
+            activation += net->input_layer[k] * net->hidden_weights[k * net->number_of_hidden_nodes + j];
         }
         net->hidden_layer[j] = sigmoid(activation);
     }
@@ -101,8 +159,7 @@ void forward_pass(struct network *net)
         double activation = net->output_layer_bias[j];
         for (int k = 0; k < net->number_of_hidden_nodes; k++)
         {
-            activation += net->hidden_layer[k]
-                * net->output_weights[k * net->number_of_outputs + j];
+            activation += net->hidden_layer[k] * net->output_weights[k * net->number_of_outputs + j];
         }
         net->output_layer[j] = sigmoid(activation);
     }
@@ -115,8 +172,7 @@ void back_propagation(struct network *net)
 
     for (int o = 0; o < net->number_of_outputs; o++)
     {
-        net->delta_output[o] = (net->goal[o] - net->output_layer[o])
-            * dSigmoid(net->output_layer[o]);
+        net->delta_output[o] = (net->goal[o] - net->output_layer[o]) * dSigmoid(net->output_layer[o]);
     }
     double sum;
     for (int h = 0; h < net->number_of_hidden_nodes; h++)
@@ -124,8 +180,7 @@ void back_propagation(struct network *net)
         sum = 0.0;
         for (int o = 0; o < net->number_of_outputs; o++)
         {
-            sum += net->output_weights[h * net->number_of_outputs + o]
-                * net->delta_output[o];
+            sum += net->output_weights[h * net->number_of_outputs + o] * net->delta_output[o];
         }
         net->delta_hidden[h] = sum * dSigmoid(net->hidden_layer[h]);
     }
@@ -150,9 +205,7 @@ void updateweightsetbiases(struct network *net)
         for (int h = 0; h < net->number_of_hidden_nodes; h++)
         {
             net->output_weights[h * net->number_of_outputs + o] +=
-                net->eta * net->delta_output[o] * net->hidden_layer[h]
-                + net->alpha
-                    * net->delta_output_weights[h * net->number_of_outputs + o];
+                net->eta * net->delta_output[o] * net->hidden_layer[h] + net->alpha * net->delta_output_weights[h * net->number_of_outputs + o];
 
             net->delta_output_weights[h * net->number_of_outputs + o] =
                 net->eta * net->delta_output[o] * net->hidden_layer[h];

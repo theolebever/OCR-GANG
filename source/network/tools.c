@@ -1,6 +1,9 @@
 #include "../network/tools.h"
 
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <math.h>
 
 #include "../network/network.h"
 #include "../process/process.h"
@@ -56,17 +59,19 @@ double dSigmoid(double x)
 // Init all weights and biases between 0.0 and 1.0
 double init_weight()
 {
-    return ((double)rand()) / ((double)RAND_MAX + 1);
+    return ((double)rand()) / ((double)RAND_MAX);
 }
 
 int cfileexists(const char *filename)
 {
+    if (filename == NULL)
+        return 0;
+
     /* try to open file to read */
     FILE *file;
     file = fopen(filename, "r");
-    if (!file)
+    if (file == NULL)
     {
-        fclose(file);
         return 0;
     }
     fclose(file);
@@ -75,10 +80,18 @@ int cfileexists(const char *filename)
 
 int fileempty(const char *filename)
 {
+    if (filename == NULL)
+        return 1;
+
     FILE *fptr;
     fptr = fopen(filename, "r");
+    if (fptr == NULL)
+        return 1;
+
     fseek(fptr, 0, SEEK_END);
     unsigned long len = (unsigned long)ftell(fptr);
+    fclose(fptr);
+
     if (len > 0)
     {
         return 0;
@@ -91,14 +104,19 @@ int fileempty(const char *filename)
 
 void save_network(const char *filename, struct network *network)
 {
+    if (filename == NULL || network == NULL)
+        return;
+
     FILE *output = fopen(filename, "w");
+    if (output == NULL)
+        return;
+
     for (int k = 0; k < network->number_of_inputs; k++)
     {
         for (int o = 0; o < network->number_of_hidden_nodes; o++)
         {
             fprintf(output, "%lf %lf\n", network->hidden_layer_bias[o],
-                    network->hidden_weights[k * network->number_of_hidden_nodes
-                                            + o]);
+                    network->hidden_weights[k * network->number_of_hidden_nodes + o]);
         }
     }
     for (int i = 0; i < network->number_of_hidden_nodes; i++)
@@ -115,14 +133,19 @@ void save_network(const char *filename, struct network *network)
 
 void load_network(const char *filename, struct network *network)
 {
+    if (filename == NULL || network == NULL)
+        return;
+
     FILE *input = fopen(filename, "r");
+    if (input == NULL)
+        return;
+
     for (int k = 0; k < network->number_of_inputs; k++)
     {
         for (int o = 0; o < network->number_of_hidden_nodes; o++)
         {
             fscanf(input, "%lf %lf\n", &network->hidden_layer_bias[o],
-                   &network->hidden_weights[k * network->number_of_hidden_nodes
-                                            + o]);
+                   &network->hidden_weights[k * network->number_of_hidden_nodes + o]);
         }
     }
     for (int i = 0; i < network->number_of_hidden_nodes; i++)
@@ -139,20 +162,23 @@ void load_network(const char *filename, struct network *network)
 
 void shuffle(int *array, size_t n)
 {
-    if (n > 1)
+    if (array == NULL || n <= 1)
+        return;
+
+    for (size_t i = 0; i < n - 1; i++)
     {
-        for (size_t i = 0; i < n - 1; i++)
-        {
-            size_t j = i + rand() / (RAND_MAX / (n - i) + 1);
-            int t = array[j];
-            array[j] = array[i];
-            array[i] = t;
-        }
+        size_t j = i + rand() / (RAND_MAX / (n - i) + 1);
+        int t = array[j];
+        array[j] = array[i];
+        array[i] = t;
     }
 }
 
 size_t IndexAnswer(struct network *net)
 {
+    if (net == NULL || net->output_layer == NULL)
+        return 0;
+
     size_t index = 0;
     for (size_t i = 1; i < (size_t)net->number_of_outputs; i++)
     {
@@ -163,6 +189,7 @@ size_t IndexAnswer(struct network *net)
     }
     return index;
 }
+
 char RetrieveChar(size_t val)
 {
     char c;
@@ -179,7 +206,7 @@ char RetrieveChar(size_t val)
     {
         c = val + 48 - 52;
     }
-    else
+    else if (val <= 71)
     {
         switch (val)
         {
@@ -214,62 +241,77 @@ char RetrieveChar(size_t val)
             c = ')';
             break;
         default:
-            exit(1);
+            c = '?';
             break;
         }
+    }
+    else
+    {
+        c = '?';
     }
     return c;
 }
 
 size_t ExpectedPos(char c)
 {
-    size_t index = (size_t)c;
+    size_t index = 0;
     if (c >= 'A' && c <= 'Z')
     {
-        index -= 65;
+        index = (size_t)(c - 65);
     }
-    if (c >= 'a' && c <= 'z')
+    else if (c >= 'a' && c <= 'z')
     {
-        index -= 71;
+        index = (size_t)(c - 97 + 26);
     }
     return index;
 }
 
 void ExpectedOutput(struct network *network, char c)
 {
+    if (network == NULL || network->goal == NULL)
+        return;
+
+    // Reset the goal array
+    for (int i = 0; i < network->number_of_outputs; i++)
+    {
+        network->goal[i] = 0;
+    }
+
     if (c >= 'A' && c <= 'Z')
         network->goal[(int)(c)-65] = 1;
-
     else if (c >= 'a' && c <= 'z')
         network->goal[((int)(c)-97) + 26] = 1;
 }
 
 char *updatepath(char *filepath, size_t len, char c, size_t index)
 {
-    char *newpath = malloc(len * sizeof(char));
-    for (size_t i = 0; i < len; i++)
-    {
-        if (i != 17)
-        {
-            newpath[i] = filepath[i];
-        }
-        else
-        {
-            newpath[i] = c;
-        }
-    }
-    if (c <= 'Z')
+    if (filepath == NULL || len < 23)
+        return NULL;
+
+    char *newpath = malloc(len + 1);
+    if (newpath == NULL)
+        return NULL;
+
+    strncpy(newpath, filepath, len);
+    newpath[len] = '\0';
+
+    if (index > 9)
+        index = 9; // Limit to single digit
+
+    if (c <= 'Z' && c >= 'A')
     {
         newpath[14] = 'a';
         newpath[15] = 'j';
+        newpath[17] = c;
     }
-    else
+    else if (c >= 'a' && c <= 'z')
     {
         newpath[14] = 'i';
         newpath[15] = 'n';
+        newpath[17] = c;
     }
+
     newpath[18] = (char)(index + 48);
-    newpath[23] = '\0';
     return newpath;
 }
 
@@ -288,13 +330,23 @@ void PrintState(char expected, char obtained)
 
 void InputFromTXT(char *filepath, struct network *net)
 {
+    if (filepath == NULL || net == NULL || net->input_layer == NULL)
+        return;
+
     FILE *file = fopen(filepath, "r");
+    if (file == NULL)
+        return;
+
     size_t size = 28;
     for (size_t i = 0; i < size; i++)
     {
         for (size_t j = 0; j < size; j++)
         {
-            fscanf(file, "%lf", &net->input_layer[i * size + j]);
+            if (fscanf(file, "%lf", &net->input_layer[i * size + j]) != 1)
+            {
+                // Handle error or use default value
+                net->input_layer[i * size + j] = 0.0;
+            }
         }
         fscanf(file, "\n");
     }
@@ -306,12 +358,12 @@ void PrepareTraining()
     init_sdl();
     char *filepath = "img/training/maj/A0.png\0";
     char *filematrix = "img/training/maj/A0.txt\0";
-    char expected_result[52] = { 'A', 'a', 'B', 'b', 'C', 'c', 'D', 'd', 'E',
-                                 'e', 'F', 'f', 'G', 'g', 'H', 'h', 'I', 'i',
-                                 'J', 'j', 'K', 'k', 'L', 'I', 'M', 'm', 'N',
-                                 'n', 'O', 'o', 'P', 'p', 'Q', 'q', 'R', 'r',
-                                 'S', 's', 'I', 't', 'U', 'u', 'V', 'v', 'W',
-                                 'w', 'X', 'x', 'Y', 'y', 'Z', 'z' };
+    char expected_result[52] = {'A', 'a', 'B', 'b', 'C', 'c', 'D', 'd', 'E',
+                                'e', 'F', 'f', 'G', 'g', 'H', 'h', 'I', 'i',
+                                'J', 'j', 'K', 'k', 'L', 'l', 'M', 'm', 'N',
+                                'n', 'O', 'o', 'P', 'p', 'Q', 'q', 'R', 'r',
+                                'S', 's', 'T', 't', 'U', 'u', 'V', 'v', 'W',
+                                'w', 'X', 'x', 'Y', 'y', 'Z', 'z'};
     int **chars_matrix = NULL;
 
     int nb = 52;
@@ -319,26 +371,75 @@ void PrepareTraining()
     {
         for (size_t index = 0; index < 4; index++)
         {
-            filepath = updatepath(filepath, (size_t)strlen(filepath),
-                                  expected_result[i], index);
-            filematrix = updatepath(filematrix, (size_t)strlen(filepath),
-                                    expected_result[i], index);
+            char *new_filepath = updatepath(filepath, strlen(filepath),
+                                            expected_result[i], index);
+            char *new_filematrix = updatepath(filematrix, strlen(filematrix),
+                                              expected_result[i], index);
 
-            SDL_Surface *image = load__image(filepath);
+            if (new_filepath == NULL || new_filematrix == NULL)
+            {
+                free(new_filepath);
+                free(new_filematrix);
+                continue;
+            }
+
+            SDL_Surface *image = load__image(new_filepath);
+            if (image == NULL)
+            {
+                free(new_filepath);
+                free(new_filematrix);
+                continue;
+            }
+
             image = black_and_white(image);
             DrawRedLines(image);
             int BlocCount = CountBlocs(image);
             SDL_Surface ***chars = malloc(sizeof(SDL_Surface **) * BlocCount);
             SDL_Surface **blocs = malloc(sizeof(SDL_Surface *) * BlocCount);
+
+            if (chars == NULL || blocs == NULL)
+            {
+                SDL_FreeSurface(image);
+                free(chars);
+                free(blocs);
+                free(new_filepath);
+                free(new_filematrix);
+                continue;
+            }
+
             int *charslen = DivideIntoBlocs(image, blocs, chars, BlocCount);
+            if (charslen == NULL)
+            {
+                SDL_FreeSurface(image);
+                free(chars);
+                free(blocs);
+                free(new_filepath);
+                free(new_filematrix);
+                continue;
+            }
 
             for (int j = 0; j < BlocCount; ++j)
             {
-                SDL_FreeSurface(blocs[j]);
+                if (blocs[j] != NULL)
+                {
+                    SDL_FreeSurface(blocs[j]);
+                }
             }
+
             ImageToMatrix(chars, &chars_matrix, charslen, BlocCount);
-            SaveMatrix(chars_matrix, filematrix);
+            SaveMatrix(chars_matrix, new_filematrix);
+
+            // Free resources
+            free(new_filepath);
+            free(new_filematrix);
+            free(chars);
+            free(blocs);
+            free(charslen);
         }
     }
-    free(chars_matrix);
+    if (chars_matrix != NULL)
+    {
+        // Free the chars_matrix - needs proper implementation to avoid memory leaks
+        free(chars_matrix);
+    }
 }
