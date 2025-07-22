@@ -16,10 +16,10 @@ Network *create_ocr_network()
 
     // Assuming 28x28 binary input
     add_conv_layer(net, 0, INPUT_HEIGHT, INPUT_WIDTH, 1, 3, 3, 32);
-    add_pool_layer(net, 1, 18, 18, 32, 2, 2, 2);
-    add_conv_layer(net, 2, 9, 9, 32, 3, 3, 64);
-    add_pool_layer(net, 3, 7, 7, 64, 2, 2, 2);
-    add_fc_layer(net, 4, 3 * 3 * 64, 128, true);
+    add_pool_layer(net, 1, 26, 26, 32, 2, 2, 2);
+    add_conv_layer(net, 2, 13, 13, 32, 3, 3, 64);
+    add_pool_layer(net, 3, 11, 11, 64, 2, 2, 2);
+    add_fc_layer(net, 4, 5 * 5 * 64, 128, true);
     add_fc_layer(net, 5, 128, 52, false);
 
     return net;
