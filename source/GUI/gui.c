@@ -1,6 +1,8 @@
 #include "gui.h"
 
 #include "../network/tools.h"
+#include "../training/training.h"
+#include "../ocr/ocr.h"
 
 gchar *filename = "";
 char *text = "";
@@ -89,90 +91,20 @@ void open_image(GtkButton *button, GtkLabel *text_label)
 
 int TrainNeuralNetwork()
 {
-    PrepareTraining();
-    struct network *network =
-        InitializeNetwork(28 * 28, 20, 52, "source/OCR/ocrwb.txt");
-    char *filepath = "img/training/maj/A0.txt\0";
-    char expected_result[52] = { 'A', 'a', 'B', 'b', 'C', 'c', 'D', 'd', 'E',
-                                 'e', 'F', 'f', 'G', 'g', 'H', 'h', 'I', 'i',
-                                 'J', 'j', 'K', 'k', 'L', 'I', 'M', 'm', 'N',
-                                 'n', 'O', 'o', 'P', 'p', 'Q', 'q', 'R', 'r',
-                                 'S', 's', 'I', 't', 'U', 'u', 'V', 'v', 'W',
-                                 'w', 'X', 'x', 'Y', 'y', 'Z', 'z' };
-    int nb = 5000;
-    int step = 0;
-    for (size_t number = 0; number < (size_t)nb; number++)
-    {
-        for (size_t i = 0; i < 52; i++)
-        {
-            for (size_t index = 0; index < 4; index++)
-            {
-                step++;
-                progressBar(step, nb * 52 * 4);
-                filepath = updatepath(filepath, (size_t)strlen(filepath),
-                                      expected_result[i], index);
-                ExpectedOutput(network, expected_result[i]);
-                InputFromTXT(filepath, network);
-                forward_pass(network);
-                // PrintState(expected_result[i],RetrieveChar(IndexAnswer(network)));
-                back_propagation(network);
-                updateweightsetbiases(network);
-            }
-        }
-    }
-    printf("\n");
-    printf("\e[?25h");
-    save_network("source/OCR/ocrwb.txt", network);
-    free(network);
+    // Use the shared training function
+    // Note: TrainNetwork currently prints to stdout. 
+    // If we need GUI feedback, we might need to redirect stdout or modify TrainNetwork.
+    // For now, we assume console output is acceptable as per original code structure.
+    TrainNetwork();
     return EXIT_SUCCESS;
 }
 
-int OCR(GtkButton *button, GtkTextBuffer *buffer)
-{
-    UNUSED(button);
-    struct network *network =
-        InitializeNetwork(28 * 28, 20, 52, "source/OCR/ocrwb.txt");
-    init_sdl();
-    SDL_Surface *image = load__image((char *)filename);
-    image = black_and_white(image);
-    g_print("Black and White and Binarization Done !\n");
-    DrawRedLines(image);
-    int BlocCount = CountBlocs(image);
-    SDL_Surface ***chars = malloc(sizeof(SDL_Surface **) * BlocCount);
-    SDL_Surface **blocs = malloc(sizeof(SDL_Surface *) * BlocCount);
-    int *charslen = DivideIntoBlocs(image, blocs, chars, BlocCount);
-    SDL_SaveBMP(image, "segmentation.bmp");
-    g_print("Segmentation Done !\n");
-    for (int j = 0; j < BlocCount; ++j)
-    {
-        SDL_FreeSurface(blocs[j]);
-    }
-
-    int **chars_matrix = NULL;
-    int chars_count = ImageToMatrix(chars, &chars_matrix, charslen, BlocCount);
-    char *result = calloc(chars_count, sizeof(char));
-
-    for (size_t index = 0; index < (size_t)chars_count; index++)
-    {
-        int is_espace = InputImage(network, index, &chars_matrix);
-        if (!is_espace)
-        {
-            forward_pass(network);
-            size_t index_answer = IndexAnswer(network);
-            result[index] = RetrieveChar(index_answer);
-        }
-        else
-        {
-            result[index] = ' ';
-        }
-    }
-    SDL_Quit();
-    g_print("OCR Done !\n");
-    text = result;
-    gtk_text_buffer_set_text(buffer, result, strlen(result));
-    free(network);
-    return EXIT_SUCCESS;
-}
+// OCR function is now in source/ocr/ocr.c but we need to implement the callback 
+// that matches the button signal signature if it was different.
+// The header ocr.h declares: int OCR(GtkButton *button, GtkTextBuffer *buffer);
+// which matches the signature used here.
+// So we don't need to implement it here, just include the header.
+// However, we need to make sure the linker finds it.
 
 void InitGUI(int argc, char *argv[])
 {

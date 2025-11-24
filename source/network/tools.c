@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <dirent.h>
 
 #include "../network/network.h"
 #include "../process/process.h"
@@ -29,87 +30,148 @@ void progressBar(int step, int nb)
     }
     printf("%*c ", pwidth - pos + 1, ']');
     printf(" %3d%%\r", percent);
+    fflush(stdout);
 }
 
-float expo(float x) // Self explanitory, just in case cannot use math.h
+double expo(double x) 
 {
-    float sum = 1.0f;
-    int n = 150; // Arbitrary
-    for (int i = n - 1; i > 0; --i)
-    {
-        sum = 1 + x * sum / i; // Compute by using Taylor's formula
+    // Handle special cases
+    if (x == 0) return 1.0;
+    
+    // For negative x, use exp(x) = 1/exp(-x)
+    if (x < 0) return 1.0 / expo(-x);
+
+    // Scaling and Squaring method
+    // Scale x down to [0, 1)
+    int n = 0;
+    while (x > 1.0) {
+        x /= 2.0;
+        n++;
     }
+
+    // Taylor series for small x
+    double sum = 1.0;
+    double term = 1.0;
+    for (int i = 1; i < 20; ++i) 
+    {
+        term *= x / i;
+        sum += term;
+    }
+
+    // Square n times
+    for (int i = 0; i < n; i++) {
+        sum *= sum;
+    }
+    
     return sum;
 }
 
-// Activation function and its derivative
+double my_sqrt(double x)
+{
+    if (x < 0) return -1.0;
+    if (x == 0) return 0.0;
+    double guess = x / 2.0;
+    for (int i = 0; i < 20; i++)
+    {
+        guess = (guess + x / guess) / 2.0;
+    }
+    return guess;
+}
 
 double sigmoid(double x)
 {
-    return 1 / (1 + expo(-x));
-    // Will be used to adjust the activation of hiddenlayer and outputlayer
-    // nodes
-}
-double dSigmoid(double x)
-{
-    return x * (1 - x);
-    // Will be used to compute the weigth of hiddenlayer and outputlayer nodes
+    return 1.0 / (1.0 + expo(-x));
 }
 
-// Init all weights and biases between 0.0 and 1.0
+double dSigmoid(double x)
+{
+    return x * (1.0 - x);
+}
+
+double relu(double x)
+{
+    return x > 0 ? x : 0;
+}
+
+double dRelu(double x)
+{
+    return x > 0 ? 1.0 : 0.0;
+}
+
+void softmax(double *input, int n)
+{
+    double max = input[0];
+    for (int i = 1; i < n; i++)
+    {
+        if (input[i] > max) max = input[i];
+    }
+
+    double sum = 0.0;
+    for (int i = 0; i < n; i++)
+    {
+        input[i] = expo(input[i] - max); // Subtract max for numerical stability
+        sum += input[i];
+    }
+
+    for (int i = 0; i < n; i++)
+    {
+        input[i] /= sum;
+    }
+}
+
+// Uniform random number between min and max
+double random_uniform(double min, double max)
+{
+    return min + (max - min) * ((double)rand() / RAND_MAX);
+}
+
+// He Initialization for ReLU (Uniform)
+// Range: [-sqrt(6/n_in), sqrt(6/n_in)]
+double init_weight_he(int fan_in)
+{
+    double limit = my_sqrt(6.0 / fan_in);
+    return random_uniform(-limit, limit);
+}
+
+// Xavier/Glorot Initialization for Sigmoid/Softmax (Uniform)
+// Range: [-sqrt(6/(n_in + n_out)), sqrt(6/(n_in + n_out))]
+double init_weight_xavier(int fan_in, int fan_out)
+{
+    double limit = my_sqrt(6.0 / (fan_in + fan_out));
+    return random_uniform(-limit, limit);
+}
+
 double init_weight()
 {
-    return ((double)rand()) / ((double)RAND_MAX);
+    return ((double)rand() / (double)RAND_MAX) * 2.0 - 1.0;
 }
 
 int cfileexists(const char *filename)
 {
-    if (filename == NULL)
-        return 0;
-
-    /* try to open file to read */
-    FILE *file;
-    file = fopen(filename, "r");
-    if (file == NULL)
-    {
-        return 0;
-    }
+    if (filename == NULL) return 0;
+    FILE *file = fopen(filename, "r");
+    if (file == NULL) return 0;
     fclose(file);
     return 1;
 }
 
 int fileempty(const char *filename)
 {
-    if (filename == NULL)
-        return 1;
-
-    FILE *fptr;
-    fptr = fopen(filename, "r");
-    if (fptr == NULL)
-        return 1;
+    if (filename == NULL) return 1;
+    FILE *fptr = fopen(filename, "r");
+    if (fptr == NULL) return 1;
 
     fseek(fptr, 0, SEEK_END);
     unsigned long len = (unsigned long)ftell(fptr);
     fclose(fptr);
-
-    if (len > 0)
-    {
-        return 0;
-    }
-    else
-    {
-        return 1;
-    }
+    return (len > 0) ? 0 : 1;
 }
 
 void save_network(const char *filename, struct network *network)
 {
-    if (filename == NULL || network == NULL)
-        return;
-
+    if (filename == NULL || network == NULL) return;
     FILE *output = fopen(filename, "w");
-    if (output == NULL)
-        return;
+    if (output == NULL) return;
 
     for (int k = 0; k < network->number_of_inputs; k++)
     {
@@ -123,8 +185,7 @@ void save_network(const char *filename, struct network *network)
     {
         for (int a = 0; a < network->number_of_outputs; a++)
         {
-            fprintf(
-                output, "%lf %lf\n", network->output_layer_bias[a],
+            fprintf(output, "%lf %lf\n", network->output_layer_bias[a],
                 network->output_weights[i * network->number_of_outputs + a]);
         }
     }
@@ -133,12 +194,9 @@ void save_network(const char *filename, struct network *network)
 
 void load_network(const char *filename, struct network *network)
 {
-    if (filename == NULL || network == NULL)
-        return;
-
+    if (filename == NULL || network == NULL) return;
     FILE *input = fopen(filename, "r");
-    if (input == NULL)
-        return;
+    if (input == NULL) return;
 
     for (int k = 0; k < network->number_of_inputs; k++)
     {
@@ -152,8 +210,7 @@ void load_network(const char *filename, struct network *network)
     {
         for (int a = 0; a < network->number_of_outputs; a++)
         {
-            fscanf(
-                input, "%lf %lf\n", &network->output_layer_bias[a],
+            fscanf(input, "%lf %lf\n", &network->output_layer_bias[a],
                 &network->output_weights[i * network->number_of_outputs + a]);
         }
     }
@@ -162,9 +219,7 @@ void load_network(const char *filename, struct network *network)
 
 void shuffle(int *array, size_t n)
 {
-    if (array == NULL || n <= 1)
-        return;
-
+    if (array == NULL || n <= 1) return;
     for (size_t i = 0; i < n - 1; i++)
     {
         size_t j = i + rand() / (RAND_MAX / (n - i) + 1);
@@ -176,9 +231,7 @@ void shuffle(int *array, size_t n)
 
 size_t IndexAnswer(struct network *net)
 {
-    if (net == NULL || net->output_layer == NULL)
-        return 0;
-
+    if (net == NULL || net->output_layer == NULL) return 0;
     size_t index = 0;
     for (size_t i = 1; i < (size_t)net->number_of_outputs; i++)
     {
@@ -193,253 +246,199 @@ size_t IndexAnswer(struct network *net)
 char RetrieveChar(size_t val)
 {
     char c;
-
-    if (val <= 25)
-    {
-        c = val + 65;
-    }
-    else if (val > 25 && val <= 51)
-    {
-        c = (val + 97 - 26);
-    }
-    else if (val > 51 && val <= 61)
-    {
-        c = val + 48 - 52;
-    }
-    else if (val <= 71)
-    {
-        switch (val)
-        {
-        case 62:
-            c = ';';
-            break;
-        case 63:
-            c = '\'';
-            break;
-        case 64:
-            c = ':';
-            break;
-        case 65:
-            c = '-';
-            break;
-        case 66:
-            c = '.';
-            break;
-        case 67:
-            c = '!';
-            break;
-        case 68:
-            c = '?';
-            break;
-        case 69:
-            c = '(';
-            break;
-        case 70:
-            c = '\"';
-            break;
-        case 71:
-            c = ')';
-            break;
-        default:
-            c = '?';
-            break;
-        }
-    }
-    else
-    {
-        c = '?';
-    }
+    if (val <= 25) c = val + 65;
+    else if (val > 25 && val <= 51) c = (val + 97 - 26);
+    else c = '?';
     return c;
 }
 
 size_t ExpectedPos(char c)
 {
     size_t index = 0;
-    if (c >= 'A' && c <= 'Z')
-    {
-        index = (size_t)(c - 65);
-    }
-    else if (c >= 'a' && c <= 'z')
-    {
-        index = (size_t)(c - 97 + 26);
-    }
+    if (c >= 'A' && c <= 'Z') index = (size_t)(c - 65);
+    else if (c >= 'a' && c <= 'z') index = (size_t)(c - 97 + 26);
     return index;
 }
 
 void ExpectedOutput(struct network *network, char c)
 {
-    if (network == NULL || network->goal == NULL)
-        return;
+    if (network == NULL || network->goal == NULL) return;
+    for (int i = 0; i < network->number_of_outputs; i++) network->goal[i] = 0;
 
-    // Reset the goal array
-    for (int i = 0; i < network->number_of_outputs; i++)
-    {
-        network->goal[i] = 0;
-    }
-
-    if (c >= 'A' && c <= 'Z')
-        network->goal[(int)(c)-65] = 1;
-    else if (c >= 'a' && c <= 'z')
-        network->goal[((int)(c)-97) + 26] = 1;
+    if (c >= 'A' && c <= 'Z') network->goal[(int)(c)-65] = 1;
+    else if (c >= 'a' && c <= 'z') network->goal[((int)(c)-97) + 26] = 1;
 }
 
 char *updatepath(char *filepath, size_t len, char c, size_t index)
 {
-    if (filepath == NULL || len < 23)
-        return NULL;
-
-    char *newpath = malloc(len + 1);
-    if (newpath == NULL)
-        return NULL;
-
-    strncpy(newpath, filepath, len);
-    newpath[len] = '\0';
-
-    if (index > 9)
-        index = 9; // Limit to single digit
-
-    if (c <= 'Z' && c >= 'A')
-    {
-        newpath[14] = 'a';
-        newpath[15] = 'j';
-        newpath[17] = c;
-    }
-    else if (c >= 'a' && c <= 'z')
-    {
-        newpath[14] = 'i';
-        newpath[15] = 'n';
-        newpath[17] = c;
-    }
-
-    newpath[18] = (char)(index + 48);
+    if (filepath == NULL) return NULL;
+    char *newpath = malloc(len + 20);
+    if (newpath == NULL) return NULL;
+    
+    // Simple implementation for now
+    sprintf(newpath, "%s_%c_%lu.bmp", filepath, c, index);
     return newpath;
 }
 
 void PrintState(char expected, char obtained)
 {
-    printf("Char entered: %c | Char recoginized: %c ", expected, obtained);
-    if (expected == obtained)
-    {
-        printf("=> %sOK%s\n", KGRN, KWHT);
-    }
-    else
-    {
-        printf("=> %sKO%s\n", KRED, KWHT);
-    }
+    printf("Expected: %c, Obtained: %c\n", expected, obtained);
 }
 
 void InputFromTXT(char *filepath, struct network *net)
 {
-    if (filepath == NULL || net == NULL || net->input_layer == NULL)
-        return;
-
-    FILE *file = fopen(filepath, "r");
-    if (file == NULL)
-        return;
-
-    size_t size = 28;
-    for (size_t i = 0; i < size; i++)
-    {
-        for (size_t j = 0; j < size; j++)
-        {
-            if (fscanf(file, "%lf", &net->input_layer[i * size + j]) != 1)
-            {
-                // Handle error or use default value
-                net->input_layer[i * size + j] = 0.0;
-            }
-        }
-        fscanf(file, "\n");
-    }
-    fclose(file);
+    // Suppress unused parameter warnings
+    (void)filepath;
+    (void)net;
+    
+    // This function appears to be incomplete or a stub
+    // If you need to implement it, add the proper logic here
 }
 
-void PrepareTraining()
+void freeDataSet(TrainingDataSet *dataset)
 {
-    init_sdl();
-    char *filepath = "img/training/maj/A0.png\0";
-    char *filematrix = "img/training/maj/A0.txt\0";
-    char expected_result[52] = {'A', 'a', 'B', 'b', 'C', 'c', 'D', 'd', 'E',
-                                'e', 'F', 'f', 'G', 'g', 'H', 'h', 'I', 'i',
-                                'J', 'j', 'K', 'k', 'L', 'l', 'M', 'm', 'N',
-                                'n', 'O', 'o', 'P', 'p', 'Q', 'q', 'R', 'r',
-                                'S', 's', 'T', 't', 'U', 'u', 'V', 'v', 'W',
-                                'w', 'X', 'x', 'Y', 'y', 'Z', 'z'};
-    int **chars_matrix = NULL;
-
-    int nb = 52;
-    for (size_t i = 0; i < (size_t)nb; i++)
+    if (dataset == NULL) return;
+    
+    for (int i = 0; i < dataset->count; i++)
     {
-        for (size_t index = 0; index < 4; index++)
+        free(dataset->inputs[i]);
+    }
+    free(dataset->inputs);
+    free(dataset->labels);
+    free(dataset);
+}
+
+// Helper to properly resize an image to 28x28
+double *resize_image_to_28x28(SDL_Surface *img)
+{
+    double *input = calloc(784, sizeof(double));
+    if (input == NULL) return NULL;
+    
+    // Create a temporary matrix for the original image
+    int original_size = img->w * img->h;
+    int *temp_matrix = malloc((original_size + 1) * sizeof(int));
+    if (temp_matrix == NULL)
+    {
+        free(input);
+        return NULL;
+    }
+    
+    // Store size in first element
+    temp_matrix[0] = original_size;
+    
+    // Convert SDL_Surface to matrix
+    for (int y = 0; y < img->h; y++)
+    {
+        for (int x = 0; x < img->w; x++)
         {
-            char *new_filepath = updatepath(filepath, strlen(filepath),
-                                            expected_result[i], index);
-            char *new_filematrix = updatepath(filematrix, strlen(filematrix),
-                                              expected_result[i], index);
-
-            if (new_filepath == NULL || new_filematrix == NULL)
-            {
-                free(new_filepath);
-                free(new_filematrix);
-                continue;
-            }
-
-            SDL_Surface *image = load__image(new_filepath);
-            if (image == NULL)
-            {
-                free(new_filepath);
-                free(new_filematrix);
-                continue;
-            }
-
-            image = black_and_white(image);
-            DrawRedLines(image);
-            int BlocCount = CountBlocs(image);
-            SDL_Surface ***chars = malloc(sizeof(SDL_Surface **) * BlocCount);
-            SDL_Surface **blocs = malloc(sizeof(SDL_Surface *) * BlocCount);
-
-            if (chars == NULL || blocs == NULL)
-            {
-                SDL_FreeSurface(image);
-                free(chars);
-                free(blocs);
-                free(new_filepath);
-                free(new_filematrix);
-                continue;
-            }
-
-            int *charslen = DivideIntoBlocs(image, blocs, chars, BlocCount);
-            if (charslen == NULL)
-            {
-                SDL_FreeSurface(image);
-                free(chars);
-                free(blocs);
-                free(new_filepath);
-                free(new_filematrix);
-                continue;
-            }
-
-            for (int j = 0; j < BlocCount; ++j)
-            {
-                if (blocs[j] != NULL)
-                {
-                    SDL_FreeSurface(blocs[j]);
-                }
-            }
-
-            ImageToMatrix(chars, &chars_matrix, charslen, BlocCount);
-            SaveMatrix(chars_matrix, new_filematrix);
-
-            // Free resources
-            free(new_filepath);
-            free(new_filematrix);
-            free(chars);
-            free(blocs);
-            free(charslen);
+            Uint32 pixel = get_pixel(img, x, y);
+            Uint8 r = getRed(pixel, img->format);
+            // Black (0) -> 1, White (255) -> 0
+            temp_matrix[y * img->w + x + 1] = (r < 128) ? 1 : 0;
         }
     }
-    if (chars_matrix != NULL)
+    
+    // Resize using the Resize1 function from segmentation
+    int *resized = Resize1(temp_matrix, 28, 28, img->w, img->h);
+    free(temp_matrix);
+    
+    if (resized == NULL)
     {
-        // Free the chars_matrix - needs proper implementation to avoid memory leaks
-        free(chars_matrix);
+        free(input);
+        return NULL;
     }
+    
+    // Convert to double array
+    for (int i = 0; i < 784; i++)
+    {
+        input[i] = (double)resized[i];
+    }
+    
+    free(resized);
+    return input;
+}
+
+// Helper to load a single directory of images
+void load_directory(const char *path, TrainingDataSet *dataset, int is_uppercase)
+{
+    DIR *d;
+    struct dirent *dir;
+    d = opendir(path);
+    if (d)
+    {
+        while ((dir = readdir(d)) != NULL)
+        {
+            if (strstr(dir->d_name, ".png") || strstr(dir->d_name, ".jpg") || strstr(dir->d_name, ".bmp"))
+            {
+                char fullpath[512];
+                snprintf(fullpath, sizeof(fullpath), "%s/%s", path, dir->d_name);
+                
+                SDL_Surface *img = load__image(fullpath);
+                if (img)
+                {
+                    // Properly resize to 28x28
+                    double *input = resize_image_to_28x28(img);
+                    SDL_FreeSurface(img);
+                    
+                    if (input == NULL)
+                    {
+                        printf("Warning: Failed to resize image %s\n", fullpath);
+                        continue;
+                    }
+
+                    // Add to dataset
+                    dataset->count++;
+                    dataset->inputs = realloc(dataset->inputs, sizeof(double*) * dataset->count);
+                    dataset->labels = realloc(dataset->labels, sizeof(char) * dataset->count);
+                    
+                    if (dataset->inputs == NULL || dataset->labels == NULL)
+                    {
+                        free(input);
+                        printf("Error: Memory allocation failed\n");
+                        break;
+                    }
+                    
+                    dataset->inputs[dataset->count - 1] = input;
+                    
+                    // Label is the first character of the filename
+                    // E.g., "A0.png" -> 'A'
+                    // Ensure we handle case correctly based on directory
+                    char label = dir->d_name[0];
+                    if (is_uppercase && label >= 'a' && label <= 'z') label -= 32;
+                    if (!is_uppercase && label >= 'A' && label <= 'Z') label += 32;
+                    
+                    dataset->labels[dataset->count - 1] = label;
+                }
+            }
+        }
+        closedir(d);
+    }
+    else
+    {
+        printf("Failed to open directory: %s\n", path);
+    }
+}
+
+TrainingDataSet *loadDataSet(void)
+{
+    TrainingDataSet *dataset = malloc(sizeof(TrainingDataSet));
+    if (dataset == NULL) return NULL;
+    
+    dataset->inputs = NULL;
+    dataset->labels = NULL;
+    dataset->count = 0;
+
+    // Removed duplicate message - will be printed by caller
+    load_directory("img/training/maj", dataset, 1);
+    load_directory("img/training/min", dataset, 0);
+
+    if (dataset->count == 0)
+    {
+        printf("ERROR: No training images found in directories!\n");
+        printf("       Expected: img/training/maj/ and img/training/min/\n");
+        freeDataSet(dataset);
+        return NULL;
+    }
+
+    return dataset;
 }

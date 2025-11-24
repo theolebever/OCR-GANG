@@ -4,35 +4,44 @@
 #include <stddef.h>
 #include "../network/network.h"
 
+// Training dataset structure for efficient data loading
+typedef struct
+{
+    double **inputs;  // Array of input vectors (each 784 values for 28x28 images)
+    char *labels;     // Array of expected characters
+    int count;        // Total number of training samples
+} TrainingDataSet;
+
 void progressBar(int step, int nb);
+double expo(double x);
+double my_sqrt(double x);
 double sigmoid(double x);
 double dSigmoid(double x);
-float expo(float x);
+double relu(double x);
+double dRelu(double x);
+void softmax(double *input, int n);
 double init_weight();
+double init_weight_he(int fan_in);
+double init_weight_xavier(int fan_in, int fan_out);
 
 int cfileexists(const char *filename);
 int fileempty(const char *filename);
-
 void save_network(const char *filename, struct network *network);
-
 void load_network(const char *filename, struct network *network);
-
 void shuffle(int *array, size_t n);
-
-char RetrieveChar(size_t val);
-
 size_t IndexAnswer(struct network *net);
-
-void ExpectedOutput(struct network *network, char c);
-
+char RetrieveChar(size_t val);
 size_t ExpectedPos(char c);
-
+void ExpectedOutput(struct network *network, char c);
 char *updatepath(char *filepath, size_t len, char c, size_t index);
-
 void PrintState(char expected, char obtained);
-
 void InputFromTXT(char *filepath, struct network *net);
+void PrepareTraining(void);
 
-void PrepareTraining();
+// Load all training data into memory
+TrainingDataSet *loadDataSet(void);
+
+// Free the training dataset
+void freeDataSet(TrainingDataSet *dataset);
 
 #endif

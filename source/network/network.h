@@ -40,4 +40,6 @@ int InputImage(struct network *net, size_t index, int ***chars_matrix);
 
 void freeNetwork(struct network *net);
 
+#define OCR_HIDDEN_NODES 32
+
 #endif

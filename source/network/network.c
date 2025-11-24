@@ -103,13 +103,12 @@ struct network *InitializeNetwork(double i, double h, double o, char *filepath)
         errx(1, "Not enough memory!");
     }
 
-    network->eta = 0.5f;
-    network->alpha = 0.9f;
+    // OPTIMIZED for tiny datasets: Much lower learning rate with lower momentum
+    network->eta = 0.001f;   // Very conservative learning rate
+    network->alpha = 0.5f;   // Moderate momentum
 
     if (filepath != NULL && !fileempty(filepath))
     {
-        // Since load_network is a void function, we can't check its return value
-        // Just call it directly
         load_network(filepath, network);
     }
     else
@@ -121,22 +120,33 @@ struct network *InitializeNetwork(double i, double h, double o, char *filepath)
 
 void initialization(struct network *net)
 {
+    // He Initialization for Hidden Layer (ReLU) with smaller scale for tiny datasets
     for (int i = 0; i < net->number_of_inputs; i++)
     {
         for (int j = 0; j < net->number_of_hidden_nodes; j++)
         {
-            net->hidden_layer_bias[j] = init_weight();
+            // Scale down weights for tiny datasets to prevent overfitting
             net->hidden_weights[i * net->number_of_hidden_nodes + j] =
-                init_weight();
+                init_weight_he(net->number_of_inputs) * 0.5;
         }
     }
+    for (int j = 0; j < net->number_of_hidden_nodes; j++)
+    {
+        net->hidden_layer_bias[j] = 0.0;
+    }
+
+    // Xavier Initialization for Output Layer (Softmax) with smaller scale
     for (int k = 0; k < net->number_of_hidden_nodes; k++)
     {
         for (int l = 0; l < net->number_of_outputs; l++)
         {
-            net->output_layer_bias[l] = init_weight();
-            net->output_weights[k * net->number_of_outputs + l] = init_weight();
+            net->output_weights[k * net->number_of_outputs + l] = 
+                init_weight_xavier(net->number_of_hidden_nodes, net->number_of_outputs) * 0.5;
         }
+    }
+    for (int l = 0; l < net->number_of_outputs; l++)
+    {
+        net->output_layer_bias[l] = 0.0;
     }
 }
 
@@ -145,6 +155,7 @@ void forward_pass(struct network *net)
     /*DONE : Foward pass = actually input some value into
     the neural network and see what we obtain out of it*/
 
+    // Hidden Layer (ReLU)
     for (int j = 0; j < net->number_of_hidden_nodes; j++)
     {
         double activation = net->hidden_layer_bias[j];
@@ -152,8 +163,10 @@ void forward_pass(struct network *net)
         {
             activation += net->input_layer[k] * net->hidden_weights[k * net->number_of_hidden_nodes + j];
         }
-        net->hidden_layer[j] = sigmoid(activation);
+        net->hidden_layer[j] = relu(activation);
     }
+
+    // Output Layer (Softmax)
     for (int j = 0; j < net->number_of_outputs; j++)
     {
         double activation = net->output_layer_bias[j];
@@ -161,56 +174,60 @@ void forward_pass(struct network *net)
         {
             activation += net->hidden_layer[k] * net->output_weights[k * net->number_of_outputs + j];
         }
-        net->output_layer[j] = sigmoid(activation);
+        net->output_layer[j] = activation;
     }
+    softmax(net->output_layer, net->number_of_outputs);
 }
 
 void back_propagation(struct network *net)
 {
-    /*DONE : Back propagation = update the weight according to
-    what we should have obtained out of the neural network*/
-
+    // 1. Calculate Output Deltas (Softmax + Cross Entropy)
     for (int o = 0; o < net->number_of_outputs; o++)
     {
-        net->delta_output[o] = (net->goal[o] - net->output_layer[o]) * dSigmoid(net->output_layer[o]);
+        net->delta_output[o] = net->output_layer[o] - net->goal[o];
     }
-    double sum;
+
+    // 2. Calculate Hidden Deltas (ReLU)
     for (int h = 0; h < net->number_of_hidden_nodes; h++)
     {
-        sum = 0.0;
+        double sum = 0.0;
         for (int o = 0; o < net->number_of_outputs; o++)
         {
             sum += net->output_weights[h * net->number_of_outputs + o] * net->delta_output[o];
         }
-        net->delta_hidden[h] = sum * dSigmoid(net->hidden_layer[h]);
-    }
-}
-
-void updateweightsetbiases(struct network *net)
-{
-    // Weights and biases between Input and Hidden layers
-    for (int i = 0; i < net->number_of_inputs; i++)
-    {
-        for (int j = 0; j < net->number_of_hidden_nodes; j++)
-        {
-            net->hidden_weights[i * net->number_of_hidden_nodes + j] +=
-                net->eta * net->input_layer[i] * net->delta_hidden[j];
-            net->hidden_layer_bias[j] += net->eta * net->delta_hidden[j];
-        }
+        net->delta_hidden[h] = sum * dRelu(net->hidden_layer[h]);
     }
 
-    // Weights between Hidden and Ouput layers
+    // 3. Update Output Weights and Biases
     for (int o = 0; o < net->number_of_outputs; o++)
     {
         for (int h = 0; h < net->number_of_hidden_nodes; h++)
         {
-            net->output_weights[h * net->number_of_outputs + o] +=
-                net->eta * net->delta_output[o] * net->hidden_layer[h] + net->alpha * net->delta_output_weights[h * net->number_of_outputs + o];
+            int index = h * net->number_of_outputs + o;
+            
+            double delta_weight = -net->eta * net->delta_output[o] * net->hidden_layer[h] 
+                                + net->alpha * net->delta_output_weights[index];
 
-            net->delta_output_weights[h * net->number_of_outputs + o] =
-                net->eta * net->delta_output[o] * net->hidden_layer[h];
+            net->output_weights[index] += delta_weight;
+            net->delta_output_weights[index] = delta_weight;
         }
-        net->output_layer_bias[o] += net->eta * net->delta_output[o];
+        net->output_layer_bias[o] += -net->eta * net->delta_output[o];
+    }
+
+    // 4. Update Hidden Weights and Biases
+    for (int h = 0; h < net->number_of_hidden_nodes; h++)
+    {
+        for (int i = 0; i < net->number_of_inputs; i++)
+        {
+            int index = i * net->number_of_hidden_nodes + h;
+            
+            double delta_weight = -net->eta * net->delta_hidden[h] * net->input_layer[i] 
+                                + net->alpha * net->delta_hidden_weights[index];
+
+            net->hidden_weights[index] += delta_weight;
+            net->delta_hidden_weights[index] = delta_weight;
+        }
+        net->hidden_layer_bias[h] += -net->eta * net->delta_hidden[h];
     }
 }
 
