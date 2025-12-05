@@ -95,7 +95,7 @@ void TrainNetwork(void)
     printf("Architecture: 784-%d-52\n", hidden_nodes);
     printf("Total parameters: %d\n", (784 * hidden_nodes) + hidden_nodes + (hidden_nodes * 52) + 52);
     
-    struct network *net = InitializeNetwork(784, hidden_nodes, 52, "source/OCR/ocrwb.txt");
+    struct network *net = InitializeNetwork(784, hidden_nodes, 52, "source/OCR-data/ocrwb.txt");
     
     if (net == NULL)
     {
@@ -169,7 +169,7 @@ void TrainNetwork(void)
             best_accuracy = epoch_accuracy;
             epochs_without_improvement = 0;
             printf(" * NEW BEST");
-            save_network("source/OCR/ocrwb.txt", net);  // Save on improvement
+            save_network("source/OCR-data/ocrwb.txt", net);  // Save on improvement
         }
         else
         {
@@ -181,7 +181,7 @@ void TrainNetwork(void)
         // Periodic save
         if ((epoch + 1) % save_interval == 0)
         {
-            save_network("source/OCR/ocrwb.txt", net);
+            save_network("source/OCR-data/ocrwb.txt", net);
         }
         
         // Learning rate decay - very gradual for tiny datasets
@@ -224,8 +224,8 @@ void TrainNetwork(void)
     }
     
     printf("\nSaving final model...\n");
-    save_network("source/OCR/ocrwb.txt", net);
-    printf("Model saved to: source/OCR/ocrwb.txt\n");
+    save_network("source/OCR-data/ocrwb.txt", net);
+    printf("Model saved to: source/OCR-data/ocrwb.txt\n");
     
     free(indices);
     freeDataSet(dataset);

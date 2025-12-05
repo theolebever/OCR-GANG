@@ -173,22 +173,30 @@ void save_network(const char *filename, struct network *network)
     FILE *output = fopen(filename, "w");
     if (output == NULL) return;
 
-    for (int k = 0; k < network->number_of_inputs; k++)
+    // Save hidden biases (once per hidden node)
+    for (int j = 0; j < network->number_of_hidden_nodes; j++)
     {
-        for (int o = 0; o < network->number_of_hidden_nodes; o++)
-        {
-            fprintf(output, "%lf %lf\n", network->hidden_layer_bias[o],
-                    network->hidden_weights[k * network->number_of_hidden_nodes + o]);
-        }
+        fprintf(output, "%lf\n", network->hidden_layer_bias[j]);
     }
-    for (int i = 0; i < network->number_of_hidden_nodes; i++)
+
+    // Save hidden weights
+    for (int i = 0; i < network->number_of_inputs * network->number_of_hidden_nodes; i++)
     {
-        for (int a = 0; a < network->number_of_outputs; a++)
-        {
-            fprintf(output, "%lf %lf\n", network->output_layer_bias[a],
-                network->output_weights[i * network->number_of_outputs + a]);
-        }
+        fprintf(output, "%lf\n", network->hidden_weights[i]);
     }
+
+    // Save output biases (once per output node)
+    for (int j = 0; j < network->number_of_outputs; j++)
+    {
+        fprintf(output, "%lf\n", network->output_layer_bias[j]);
+    }
+
+    // Save output weights
+    for (int i = 0; i < network->number_of_hidden_nodes * network->number_of_outputs; i++)
+    {
+        fprintf(output, "%lf\n", network->output_weights[i]);
+    }
+
     fclose(output);
 }
 
@@ -198,22 +206,30 @@ void load_network(const char *filename, struct network *network)
     FILE *input = fopen(filename, "r");
     if (input == NULL) return;
 
-    for (int k = 0; k < network->number_of_inputs; k++)
+    // Load hidden biases (once per hidden node)
+    for (int j = 0; j < network->number_of_hidden_nodes; j++)
     {
-        for (int o = 0; o < network->number_of_hidden_nodes; o++)
-        {
-            fscanf(input, "%lf %lf\n", &network->hidden_layer_bias[o],
-                   &network->hidden_weights[k * network->number_of_hidden_nodes + o]);
-        }
+        fscanf(input, "%lf\n", &network->hidden_layer_bias[j]);
     }
-    for (int i = 0; i < network->number_of_hidden_nodes; i++)
+
+    // Load hidden weights
+    for (int i = 0; i < network->number_of_inputs * network->number_of_hidden_nodes; i++)
     {
-        for (int a = 0; a < network->number_of_outputs; a++)
-        {
-            fscanf(input, "%lf %lf\n", &network->output_layer_bias[a],
-                &network->output_weights[i * network->number_of_outputs + a]);
-        }
+        fscanf(input, "%lf\n", &network->hidden_weights[i]);
     }
+
+    // Load output biases (once per output node)
+    for (int j = 0; j < network->number_of_outputs; j++)
+    {
+        fscanf(input, "%lf\n", &network->output_layer_bias[j]);
+    }
+
+    // Load output weights
+    for (int i = 0; i < network->number_of_hidden_nodes * network->number_of_outputs; i++)
+    {
+        fscanf(input, "%lf\n", &network->output_weights[i]);
+    }
+
     fclose(input);
 }
 

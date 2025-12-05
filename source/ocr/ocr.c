@@ -16,7 +16,7 @@ char* PerformOCR(char *filepath)
     if (filepath == NULL) return NULL;
 
     // Initialize neural network
-    struct network *network = InitializeNetwork(28 * 28, OCR_HIDDEN_NODES, 52, "source/OCR/ocrwb.txt");
+    struct network *network = InitializeNetwork(28 * 28, OCR_HIDDEN_NODES, 52, "source/OCR-data/ocrwb.txt");
     if (network == NULL)
     {
         return NULL;

@@ -16,10 +16,10 @@ all: main create
 
 create:
 	[ -d "source/Xor" ] || mkdir source/Xor
-	[ -d "source/OCR" ] || mkdir source/OCR
+	[ -d "source/OCR-data" ] || mkdir source/OCR-data
 	touch source/Xor/xordata.txt
 	touch source/Xor/xorwb.txt
-	touch source/OCR/ocrwb.txt
+	touch source/OCR-data/ocrwb.txt
 
 main: $(OBJ)
 
@@ -29,6 +29,6 @@ debug: LDLIBS+= -lasan
 debug: all
 
 clean:
-	rm -rf *.bmp img/temp/*.bmp source/Xor source/OCR *.tst img/training/maj/*.txt img/training/min/*.txt
+	rm -rf *.bmp img/temp/*.bmp source/Xor source/OCR-data *.tst img/training/maj/*.txt img/training/min/*.txt
 	$(RM) $(OBJ) $(OBJ_TESTS) $(DEP) $(DEP_TESTS) main && clear
 # END

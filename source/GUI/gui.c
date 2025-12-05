@@ -99,13 +99,6 @@ int TrainNeuralNetwork()
     return EXIT_SUCCESS;
 }
 
-// OCR function is now in source/ocr/ocr.c but we need to implement the callback 
-// that matches the button signal signature if it was different.
-// The header ocr.h declares: int OCR(GtkButton *button, GtkTextBuffer *buffer);
-// which matches the signature used here.
-// So we don't need to implement it here, just include the header.
-// However, we need to make sure the linker finds it.
-
 void InitGUI(int argc, char *argv[])
 {
     // Init variables
