@@ -106,12 +106,33 @@ char* PerformOCR(char *filepath)
     }
     result[chars_count] = '\0'; // Ensure string is properly terminated
 
-    // Cleanup
-    SDL_FreeSurface(image);
+    freeNetwork(network);
+
+    for (int i = 0; i < chars_count; i++)
+        free(chars_matrix[i]);
+    free(chars_matrix);
+
+    for (int b = 0; b < BlocCount; b++)
+    {
+        if (chars && chars[b])
+        {
+            for (int c = 0; c < charslen[b]; c++)
+            {
+                if (chars[b][c])
+                    SDL_FreeSurface(chars[b][c]);
+            }
+            free(chars[b]);
+        }
+
+        if (blocs && blocs[b])
+            SDL_FreeSurface(blocs[b]);
+    }
+
     free(chars);
     free(blocs);
     free(charslen);
-    freeNetwork(network);
+
+    SDL_FreeSurface(image);
     SDL_Quit();
 
     return result;

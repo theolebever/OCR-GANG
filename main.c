@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "SDL/SDL.h"
 #include "SDL/SDL_image.h"
@@ -35,8 +36,8 @@ void XOR(void)
 
     // Define training data
     static const int number_training_sets = 4;
-    double training_inputs[] = {0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f};
-    double training_outputs[] = {0.0f, 1.0f, 1.0f, 0.0f};
+    const double training_inputs[] = {0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f};
+    const double training_outputs[] = {0.0f, 1.0f, 1.0f, 0.0f};
     int trainingSetOrder[] = {0, 1, 2, 3};
 
     // File for saving training results
@@ -52,18 +53,23 @@ void XOR(void)
 
     if (fgets(answer, sizeof(answer), stdin) == NULL)
     {
-        free(network);
+        freeNetwork(network);
         errx(1, "Error reading input!");
     }
 
-    int choice = atoi(answer);
+    char *end;
+    long choice = strtol(answer, &end, 10);
+    if (*end != '\n' && *end != '\0')
+    {
+        printf("Invalid input\n");
+    }
 
     if (choice == 1) // Train the network
     {
         result_file = fopen("source/Xor/xordata.txt", "w");
         if (result_file == NULL)
         {
-            free(network);
+            freeNetwork(network);
             errx(1, "Failed to open result file");
         }
 
@@ -118,7 +124,7 @@ void XOR(void)
         printf("Please input the first number (0 or 1):\n");
         if (fgets(input_str, sizeof(input_str), stdin) == NULL)
         {
-            free(network);
+            freeNetwork(network);
             errx(1, "Error reading input!");
         }
         input1 = atof(input_str);
@@ -126,10 +132,18 @@ void XOR(void)
         printf("Please input the second number (0 or 1):\n");
         if (fgets(input_str, sizeof(input_str), stdin) == NULL)
         {
-            free(network);
+            freeNetwork(network);
             errx(1, "Error reading input!");
         }
         input2 = atof(input_str);
+
+        if ((input1 != 0.0 && input1 != 1.0) ||
+            (input2 != 0.0 && input2 != 1.0))
+        {
+            printf("Inputs must be 0 or 1\n");
+            freeNetwork(network);
+            return;
+        }
 
         // Set inputs and compute
         network->input_layer[0] = input1;
@@ -148,6 +162,8 @@ void XOR(void)
 
 int main(int argc, char *argv[])
 {
+    srand((unsigned)time(NULL));
+
     if (argc < 2)
     {
         // Start GUI if no arguments provided

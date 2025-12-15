@@ -1,6 +1,7 @@
 #include "training.h"
 #include "../network/tools.h"
 #include "../network/network.h"
+#include "augmentation.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <err.h>
@@ -47,6 +48,9 @@ void TrainNetwork(void)
     {
         errx(1, "Failed to load dataset!");
     }
+
+    // Augment dataset (10x size)
+    augment_dataset(dataset, 10);
     
     printf("\n=== DATASET ANALYSIS ===\n");
     printf("Total samples: %d\n", dataset->count);
@@ -110,9 +114,13 @@ void TrainNetwork(void)
     int *indices = malloc(sizeof(int) * dataset->count);
     for(int i = 0; i < dataset->count; i++) indices[i] = i;
 
+    // Training Hyperparameters
+    net->eta = 0.1f;       // Learning Rate
+    net->alpha = 0.5f;     // Momentum
+
     printf("\n=== TRAINING CONFIGURATION ===\n");
     printf("Epochs: %d\n", epochs);
-    printf("Learning rate: %.5f (very conservative)\n", net->eta);
+    printf("Learning rate: %.5f\n", net->eta);
     printf("Momentum: %.2f\n", net->alpha);
     printf("Samples per epoch: %d\n\n", dataset->count);
 
@@ -128,6 +136,7 @@ void TrainNetwork(void)
     {
         shuffle(indices, dataset->count);
         int epoch_correct = 0;
+        double total_error = 0.0;
         
         // Train on all samples
         for (int i = 0; i < dataset->count; i++)
@@ -145,6 +154,12 @@ void TrainNetwork(void)
             // Forward pass
             forward_pass(net);
 
+            // Calculate Loss (MSE) for monitoring
+            for(int o=0; o<net->number_of_outputs; o++) {
+                double err = net->goal[o] - net->output_layer[o];
+                total_error += 0.5 * err * err;
+            }
+
             // Back propagation
             back_propagation(net);
 
@@ -158,10 +173,11 @@ void TrainNetwork(void)
         }
         
         float epoch_accuracy = (float)epoch_correct / dataset->count * 100.0f;
+        double avg_loss = total_error / dataset->count;
         
-        // Print progress
-        printf("Epoch %3d/%d | Accuracy: %6.2f%% (%3d/%3d correct)", 
-               epoch + 1, epochs, epoch_accuracy, epoch_correct, dataset->count);
+        // Print progress with Loss
+        printf("Epoch %3d/%d | Accuracy: %6.2f%% | Loss: %.5f", 
+               epoch + 1, epochs, epoch_accuracy, avg_loss);
         
         // Track improvement
         if (epoch_accuracy > best_accuracy)
@@ -184,17 +200,17 @@ void TrainNetwork(void)
             save_network("source/OCR-data/ocrwb.txt", net);
         }
         
-        // Learning rate decay - very gradual for tiny datasets
+        // Learning rate decay
         if ((epoch + 1) % 50 == 0 && net->eta > 0.0001)
         {
-            net->eta *= 0.9;  // Reduce by only 10%
+            net->eta *= 0.9;
             printf("    -> Learning rate adjusted to: %.6f\n", net->eta);
         }
         
-        // Early stopping - more patient for tiny datasets
-        if (epochs_without_improvement >= 30)
+        // Early stopping
+        if (epochs_without_improvement >= 50) // Increased patience
         {
-            printf("\nEarly stopping: No improvement for 30 epochs.\n");
+            printf("\nEarly stopping: No improvement for 50 epochs.\n");
             break;
         }
     }

@@ -5,10 +5,10 @@ CC=gcc
 
 CPPFLAGS= `pkg-config --cflags sdl gtk+-3.0` -MMD
 CFLAGS= -Wall -Wextra -std=c99 -O3
-LDFLAGS= -ldl -lm -rdynamic
-LDLIBS= `pkg-config --libs sdl gtk+-3.0` -lSDL_image
+LDFLAGS= -rdynamic
+LDLIBS= `pkg-config --libs sdl gtk+-3.0` -lSDL_image -lm -ldl
 
-SRC= main.c source/process/process.c source/sdl/our_sdl.c source/segmentation/segmentation.c source/network/network.c source/network/tools.c source/GUI/gui.c source/training/training.c source/ocr/ocr.c
+SRC= main.c source/process/process.c source/sdl/our_sdl.c source/segmentation/segmentation.c source/network/network.c source/network/tools.c source/GUI/gui.c source/training/training.c source/training/augmentation.c source/ocr/ocr.c
 OBJ= $(SRC:.c=.o)
 DEP= $(SRC:.c=.d)
 

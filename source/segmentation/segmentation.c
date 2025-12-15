@@ -93,109 +93,88 @@ int SizeOfChar(SDL_Surface *bloc)
     return charSize;
 }
 
-int *DivideIntoBlocs(SDL_Surface *image, SDL_Surface **blocs,
-                     SDL_Surface ***chars, int Len)
+int *DivideIntoBlocs(SDL_Surface *image,
+                     SDL_Surface **blocs,
+                     SDL_Surface ***chars,
+                     int Len)
 {
-    Uint32 pixel;
-    Uint8 red;
-    Uint8 green;
-    SDL_Rect bloc;
+    int *CharsCount = calloc(Len, sizeof(int));
+    if (!CharsCount)
+        errx(1, "OOM DivideIntoBlocs");
+
     int Count = 0;
-    char boo;
-    int Ymin;
-    int Ymax;
-    SDL_Rect chr;
-    SDL_Rect center;
-    char chrBoo;
-    int Xmin;
-    int Xmax;
-    int size;
-    int *CharsCount = malloc(sizeof(int) * Len);
-    for (int i = 0; i < image->h; i++)
+
+    for (int y = 0; y < image->h && Count < Len; y++)
     {
-        pixel = get_pixel(image, 0, i);
-        red = getRed(pixel, image->format);
+        Uint32 pixel = get_pixel(image, 0, y);
+        Uint8 red = getRed(pixel, image->format);
+
         if (red == 0 || red == 255)
         {
-            boo = 1;
-            Ymin = i;
-            Ymax = i;
-            while (boo && Ymax < image->h)
+            int y_start = y;
+            while (y < image->h)
             {
-                Ymax++;
-                pixel = get_pixel(image, 0, Ymax);
+                pixel = get_pixel(image, 0, y);
                 red = getRed(pixel, image->format);
                 if (red == 128)
-                {
-                    boo = 0;
-                }
+                    break;
+                y++;
             }
-            bloc.x = 0;
-            bloc.y = Ymin;
-            bloc.w = image->w;
-            bloc.h = Ymax - Ymin;
-            SDL_UnlockSurface(image);
-            blocs[Count] = SDL_CreateRGBSurface(SDL_HWSURFACE, bloc.w, bloc.h,
-                                                32, 0, 0, 0, 0);
+
+            SDL_Rect bloc = {0, y_start, image->w, y - y_start};
+            blocs[Count] = SDL_CreateRGBSurface(0, bloc.w, bloc.h, 32, 0,0,0,0);
+            if (!blocs[Count])
+                errx(1, "SDL_CreateRGBSurface failed");
+
             SDL_BlitSurface(image, &bloc, blocs[Count], NULL);
             DrawLinesUp(blocs[Count]);
-            int CharsNumber = CountChars(blocs[Count]);
-            SDL_BlitSurface(blocs[Count], NULL, image, &bloc);
-            SDL_LockSurface(image);
-            CharsCount[Count] = CharsNumber;
-            chars[Count] = malloc(sizeof(SDL_Surface *) * CharsNumber);
-            int CharCount = 0;
-            for (int i = 0; i < blocs[Count]->w; i++)
+
+            int nb_chars = CountChars(blocs[Count]);
+            CharsCount[Count] = nb_chars;
+            chars[Count] = calloc(nb_chars, sizeof(SDL_Surface *));
+            if (!chars[Count])
+                errx(1, "OOM chars");
+
+            int c = 0;
+            for (int x = 0; x < blocs[Count]->w && c < nb_chars; x++)
             {
-                pixel = get_pixel(blocs[Count], i, 0);
+                pixel = get_pixel(blocs[Count], x, 0);
                 red = getRed(pixel, blocs[Count]->format);
-                green = getGreen(pixel, blocs[Count]->format);
-                if (green == 128)
-                {
-                    chars[Count][CharCount] = SDL_CreateRGBSurface(
-                        SDL_HWSURFACE, bloc.h, bloc.h, 32, 0, 0, 0, 0);
-                    SDL_FillRect(chars[Count][CharCount], 0, -1);
-                    CharCount++;
-                }
+
                 if (red == 0 || red == 255)
                 {
-                    chrBoo = 1;
-                    Xmin = i;
-                    Xmax = i;
-                    while (chrBoo && Xmax < blocs[Count]->w)
+                    int x_start = x;
+                    while (x < blocs[Count]->w)
                     {
-                        Xmax++;
-                        pixel = get_pixel(blocs[Count], Xmax, 0);
+                        pixel = get_pixel(blocs[Count], x, 0);
                         red = getRed(pixel, blocs[Count]->format);
                         if (red == 128)
-                        {
-                            chrBoo = 0;
-                        }
+                            break;
+                        x++;
                     }
-                    chr.x = Xmin;
-                    chr.y = 0;
-                    chr.w = Xmax - Xmin;
-                    chr.h = blocs[Count]->h;
-                    size = (chr.h < chr.w ? chr.w : chr.h);
-                    center.x = size / 2 - chr.w / 2;
-                    center.y = size / 2 - chr.h / 2;
-                    SDL_UnlockSurface(blocs[Count]);
-                    chars[Count][CharCount] = SDL_CreateRGBSurface(
-                        SDL_HWSURFACE, size, size, 32, 0, 0, 0, 0);
-                    SDL_FillRect(chars[Count][CharCount], 0, -1);
-                    SDL_BlitSurface(blocs[Count], &chr, chars[Count][CharCount],
-                                    &center);
-                    SDL_LockSurface(blocs[Count]);
-                    CharCount++;
-                    i = Xmax;
+
+                    SDL_Rect chr = {x_start, 0, x - x_start, blocs[Count]->h};
+                    int size = chr.w > chr.h ? chr.w : chr.h;
+                    SDL_Rect center = {
+                        size/2 - chr.w/2,
+                        size/2 - chr.h/2,
+                        chr.w,
+                        chr.h
+                    };
+
+                    chars[Count][c] =
+                        SDL_CreateRGBSurface(0, size, size, 32,0,0,0,0);
+                    SDL_FillRect(chars[Count][c], NULL, SDL_MapRGB(chars[Count][c]->format,255,255,255));
+                    SDL_BlitSurface(blocs[Count], &chr, chars[Count][c], &center);
+                    c++;
                 }
             }
             Count++;
-            i = Ymax;
         }
     }
     return CharsCount;
 }
+
 
 void DrawLinesUp(SDL_Surface *image)
 {
@@ -270,64 +249,80 @@ int CountChars(SDL_Surface *bloc)
     return Count;
 }
 
-int *Resize1(int *mat, int sizeFinalX, int sizeFinalY, int sizeX, int sizeY)
+int *Resize1(int *mat, int fx, int fy, int sx, int sy)
 {
-    double coeffX = ((double)sizeX) / ((double)sizeFinalX);
-    double coeffY = ((double)sizeY) / ((double)sizeFinalY);
-    int *res = malloc(sizeFinalX * sizeFinalY * sizeof(int));
-    for (int i = 0; i < sizeFinalY; i++)
-    {
-        for (int j = 0; j < sizeFinalX; j++)
-        {
-            res[i * sizeFinalX + j] = mat[((int)((double)i * coeffY)) * sizeX
-                                          + (int)((double)j * coeffX) + 1];
-        }
-    }
+    int *res = malloc(sizeof(int) * fx * fy);
+    if (!res)
+        errx(1, "OOM Resize1");
+
+    double cx = (double)sx / fx;
+    double cy = (double)sy / fy;
+
+    for (int y = 0; y < fy; y++)
+        for (int x = 0; x < fx; x++)
+            res[y * fx + x] =
+                mat[(int)(y * cy) * sx + (int)(x * cx)];
+
     return res;
 }
 
-int ImageToMatrix(SDL_Surface ***chars, int ***chars_matrix, int *len,
+
+int ImageToMatrix(SDL_Surface ***chars,
+                  int ***chars_matrix,
+                  int *len,
                   int BlocNumber)
 {
-    int count = 0;
-    for (int j = 0; j < BlocNumber; ++j)
+    int total = 0;
+
+    /* Comptage réel des surfaces valides */
+    for (int b = 0; b < BlocNumber; b++)
+        for (int c = 0; c < len[b]; c++)
+            if (chars[b][c])
+                total++;
+
+    *chars_matrix = malloc(sizeof(int *) * total);
+    if (!*chars_matrix)
+        errx(1, "OOM ImageToMatrix");
+
+    int index = 0;
+
+    for (int b = 0; b < BlocNumber; b++)
     {
-        for (int i = 0; i < len[j]; ++i)
+        for (int c = 0; c < len[b]; c++)
         {
-            count++;
-        }
-    }
-    *chars_matrix = malloc(sizeof(int) * 5000);
-    if (chars_matrix == NULL)
-    {
-        errx(1, "Not Enough Memory !");
-    }
-    count = 0;
-    for (int j = 0; j < BlocNumber; ++j)
-    {
-        for (int i = 0; i < len[j]; ++i)
-        {
-            (*chars_matrix)[count] = malloc(
-                chars[j][i]->w * chars[j][i]->h * sizeof(int) + sizeof(int));
-            (*chars_matrix)[count][0] = chars[j][i]->w * chars[j][i]->h;
-            for (int y = 0; y < chars[j][i]->h; y++)
+            SDL_Surface *s = chars[b][c];
+            if (!s)
+                continue; // ← ESPACE, on ignore
+
+            int w = s->w;
+            int h = s->h;
+
+            if (w <= 0 || h <= 0)
+                continue;
+
+            int *raw = malloc(sizeof(int) * w * h);
+            if (!raw)
+                errx(1, "OOM raw");
+
+            for (int y = 0; y < h; y++)
             {
-                for (int x = 0; x < chars[j][i]->w; x++)
+                for (int x = 0; x < w; x++)
                 {
-                    Uint32 pixel = get_pixel(chars[j][i], x, y);
+                    Uint32 px = get_pixel(s, x, y);
                     Uint8 r, g, b;
-                    SDL_GetRGB(pixel, chars[j][i]->format, &r, &g, &b);
-                    (*chars_matrix)[count][y * chars[j][i]->w + x + 1] =
-                        r == 255 ? 0 : 1;
+                    SDL_GetRGB(px, s->format, &r, &g, &b);
+                    raw[y * w + x] = (r < 128) ? 1 : 0;
                 }
             }
-            int *char_resized = Resize1((*chars_matrix)[count], 28, 28,
-                                        chars[j][i]->w, chars[j][i]->h);
-            (*chars_matrix)[count] = char_resized;
-            count++;
+
+            int *resized = Resize1(raw, 28, 28, w, h);
+            free(raw);
+
+            (*chars_matrix)[index++] = resized;
         }
     }
-    return count;
+
+    return index;
 }
 
 void SaveMatrix(int **chars_matrix, char *filename)

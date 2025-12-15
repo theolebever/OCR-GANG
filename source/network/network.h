@@ -21,6 +21,8 @@ struct network
     double *output_weights;
     double *delta_output_weights;
 
+    double *hidden_pre_activation;
+
     double eta;
     double alpha;
     double *goal;
@@ -40,6 +42,6 @@ int InputImage(struct network *net, size_t index, int ***chars_matrix);
 
 void freeNetwork(struct network *net);
 
-#define OCR_HIDDEN_NODES 32
+#define OCR_HIDDEN_NODES 128
 
 #endif

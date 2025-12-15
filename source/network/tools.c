@@ -44,10 +44,15 @@ double expo(double x)
     // Scaling and Squaring method
     // Scale x down to [0, 1)
     int n = 0;
-    while (x > 1.0) {
+    // Fix: Prevent infinite loop if x is Infinity or extremely large
+    // 2^1024 is larger than DBL_MAX, so n > 1024 is unreasonable
+    while (x > 1.0 && n < 2000) {
         x /= 2.0;
         n++;
     }
+
+    // Prevent infinite loop if x is extremely large (prevent Inf return)
+    if (n >= 2000) return (x > 0) ? 1.79769e+308 : 0.0;
 
     // Taylor series for small x
     double sum = 1.0;
@@ -90,12 +95,13 @@ double dSigmoid(double x)
 
 double relu(double x)
 {
-    return x > 0 ? x : 0;
+    // Leaky ReLU to avoid dead neurons
+    return x > 0.0 ? x : 0.01 * x;
 }
 
 double dRelu(double x)
 {
-    return x > 0 ? 1.0 : 0.0;
+    return x > 0.0 ? 1.0 : 0.01;
 }
 
 void softmax(double *input, int n)
