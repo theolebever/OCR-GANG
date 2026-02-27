@@ -1,21 +1,32 @@
 #include "cnn.h"
 #include <stdio.h>
-#include <math.h>
+#include <string.h>
+
+// Adam hyperparameters (shared with network.c)
+#define ADAM_BETA1  0.9
+#define ADAM_BETA2  0.999
+#define ADAM_EPS    1e-8
 
 CNN* init_cnn() {
     CNN* cnn = calloc(1, sizeof(CNN));
     if (!cnn) return NULL;
 
-    // Xavier/He Initialization for filters
+    // He initialization for filters
     for (int f = 0; f < NUM_FILTERS; f++) {
         for (int i = 0; i < CONV_SIZE; i++) {
             for (int j = 0; j < CONV_SIZE; j++) {
-                // He initialization for Relu
-                cnn->filters[f][i][j] = ((double)rand() / RAND_MAX * 2.0 - 1.0) * sqrt(2.0 / (CONV_SIZE * CONV_SIZE));
+                cnn->filters[f][i][j] = ((double)rand() / RAND_MAX * 2.0 - 1.0)
+                                        * my_sqrt(2.0 / (CONV_SIZE * CONV_SIZE));
             }
         }
         cnn->biases[f] = 0.0;
     }
+
+    // Adam moment buffers zeroed by calloc; initialize running products to 1
+    cnn->adam_t      = 0;
+    cnn->adam_beta1_t = 1.0;
+    cnn->adam_beta2_t = 1.0;
+
     return cnn;
 }
 
@@ -75,7 +86,7 @@ void cnn_forward(CNN* cnn, double image[784], double *out) {
         }
     }
 
-    // 4. Flatten directly into caller-supplied buffer (no malloc)
+    // 4. Flatten directly into caller-supplied buffer
     int idx = 0;
     for (int f = 0; f < NUM_FILTERS; f++) {
         for (int y = 0; y < POOL_H; y++) {
@@ -87,7 +98,13 @@ void cnn_forward(CNN* cnn, double image[784], double *out) {
 }
 
 void cnn_backward(CNN* cnn, double* output_gradients, double eta) {
-    // output_gradients size = FLATTEN_SIZE (1352)
+    // Advance Adam timestep; update running beta^t products
+    cnn->adam_t += 1;
+    cnn->adam_beta1_t *= ADAM_BETA1;
+    cnn->adam_beta2_t *= ADAM_BETA2;
+    double bc1 = 1.0 - cnn->adam_beta1_t;
+    double bc2 = 1.0 - cnn->adam_beta2_t;
+
     // 1. Un-flatten gradients into pooling layer gradients
     double pool_grads[NUM_FILTERS][POOL_H][POOL_W];
     int idx = 0;
@@ -99,8 +116,9 @@ void cnn_backward(CNN* cnn, double* output_gradients, double eta) {
         }
     }
 
-    // 2. Backprop through Max Pooling (Upsample)
-    double conv_grads[NUM_FILTERS][CONV_H][CONV_W] = {0}; // Initialize to 0
+    // 2. Backprop through Max Pooling (route gradient to the max position)
+    double conv_grads[NUM_FILTERS][CONV_H][CONV_W];
+    memset(conv_grads, 0, sizeof(conv_grads));
 
     for (int f = 0; f < NUM_FILTERS; f++) {
         for (int y = 0; y < POOL_H; y++) {
@@ -108,11 +126,7 @@ void cnn_backward(CNN* cnn, double* output_gradients, double eta) {
                 int max_idx = cnn->pool_mask[f][y][x];
                 int dy = max_idx / POOL_SIZE;
                 int dx = max_idx % POOL_SIZE;
-                
-                int target_y = y * POOL_SIZE + dy;
-                int target_x = x * POOL_SIZE + dx;
-                
-                conv_grads[f][target_y][target_x] = pool_grads[f][y][x];
+                conv_grads[f][y * POOL_SIZE + dy][x * POOL_SIZE + dx] = pool_grads[f][y][x];
             }
         }
     }
@@ -121,20 +135,17 @@ void cnn_backward(CNN* cnn, double* output_gradients, double eta) {
     for (int f = 0; f < NUM_FILTERS; f++) {
         for (int y = 0; y < CONV_H; y++) {
             for (int x = 0; x < CONV_W; x++) {
-                if (cnn->conv_output[f][y][x] <= 0) {
-                    conv_grads[f][y][x] = 0; // Derivative of ReLU is 0 for x<=0
-                }
-                // else it stays as is (derivative is 1)
+                if (cnn->conv_output[f][y][x] <= 0)
+                    conv_grads[f][y][x] = 0;
             }
         }
     }
 
-    // 4. Backprop through Convolution (Gradients for Filters and Biases)
-    // Clear gradients
-    for(int f=0; f<NUM_FILTERS; f++) {
+    // 4. Accumulate filter and bias gradients
+    for (int f = 0; f < NUM_FILTERS; f++) {
         cnn->bias_grads[f] = 0;
-        for(int i=0; i<CONV_SIZE; i++)
-            for(int j=0; j<CONV_SIZE; j++)
+        for (int i = 0; i < CONV_SIZE; i++)
+            for (int j = 0; j < CONV_SIZE; j++)
                 cnn->filter_grads[f][i][j] = 0;
     }
 
@@ -142,14 +153,9 @@ void cnn_backward(CNN* cnn, double* output_gradients, double eta) {
         for (int y = 0; y < CONV_H; y++) {
             for (int x = 0; x < CONV_W; x++) {
                 double grad = conv_grads[f][y][x];
-                
-                // Accumulate bias gradient
                 cnn->bias_grads[f] += grad;
-
-                // Accumulate filter gradients
                 for (int i = 0; i < CONV_SIZE; i++) {
                     for (int j = 0; j < CONV_SIZE; j++) {
-                        // Input causing this output was at (y+i, x+j)
                         cnn->filter_grads[f][i][j] += cnn->input[y + i][x + j] * grad;
                     }
                 }
@@ -157,18 +163,25 @@ void cnn_backward(CNN* cnn, double* output_gradients, double eta) {
         }
     }
 
-    // 5. Update Weights (Gradient Descent)
+    // 5. Update weights with Adam
     for (int f = 0; f < NUM_FILTERS; f++) {
-        cnn->biases[f] -= eta * cnn->bias_grads[f];
-        
+        // Bias update
+        double bg = cnn->bias_grads[f];
+        cnn->m_biases[f] = ADAM_BETA1 * cnn->m_biases[f] + (1.0 - ADAM_BETA1) * bg;
+        cnn->v_biases[f] = ADAM_BETA2 * cnn->v_biases[f] + (1.0 - ADAM_BETA2) * bg * bg;
+        double m_hat_b = cnn->m_biases[f] / bc1;
+        double v_hat_b = cnn->v_biases[f] / bc2;
+        cnn->biases[f] -= eta * m_hat_b / (my_sqrt(v_hat_b) + ADAM_EPS);
+
+        // Filter weight update
         for (int i = 0; i < CONV_SIZE; i++) {
             for (int j = 0; j < CONV_SIZE; j++) {
-                 // Gradient Clipping for CNN weights too
-                double delta = -eta * cnn->filter_grads[f][i][j];
-                if (delta > 0.1) delta = 0.1;
-                if (delta < -0.1) delta = -0.1;
-
-                cnn->filters[f][i][j] += delta;
+                double fg = cnn->filter_grads[f][i][j];
+                cnn->m_filters[f][i][j] = ADAM_BETA1 * cnn->m_filters[f][i][j] + (1.0 - ADAM_BETA1) * fg;
+                cnn->v_filters[f][i][j] = ADAM_BETA2 * cnn->v_filters[f][i][j] + (1.0 - ADAM_BETA2) * fg * fg;
+                double m_hat = cnn->m_filters[f][i][j] / bc1;
+                double v_hat = cnn->v_filters[f][i][j] / bc2;
+                cnn->filters[f][i][j] -= eta * m_hat / (my_sqrt(v_hat) + ADAM_EPS);
             }
         }
     }

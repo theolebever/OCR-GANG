@@ -47,12 +47,10 @@ void TrainNetwork(void)
     int *indices = malloc(sizeof(int) * dataset->count);
     for(int i = 0; i < dataset->count; i++) indices[i] = i;
 
-    // Training Hyperparameters
-    net->eta = 0.01f;
-    net->alpha = 0.9f;
+    // Training Hyperparameters (Adam optimizer)
+    net->eta = 0.001;  // Adam default learning rate
 
-    printf("Learning rate: %.5f\n", net->eta);
-    printf("Momentum: %.2f\n\n", net->alpha);
+    printf("Learning rate: %.5f (Adam)\n", net->eta);
 
     float best_accuracy = 0.0f;
     int epochs_without_improvement = 0;

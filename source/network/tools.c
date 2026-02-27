@@ -34,53 +34,45 @@ void progressBar(int step, int nb)
     fflush(stdout);
 }
 
-double expo(double x) 
+double expo(double x)
 {
-    // Handle special cases
-    if (x == 0) return 1.0;
-    
-    // For negative x, use exp(x) = 1/exp(-x)
-    if (x < 0) return 1.0 / expo(-x);
+    // Clamp to avoid overflow/underflow
+    if (x >  709.0) return 1.79769e+308;
+    if (x < -709.0) return 0.0;
 
-    // Scaling and Squaring method
-    // Scale x down to [0, 1)
+    // Handle negative x without recursion
+    int neg = 0;
+    if (x < 0.0) { neg = 1; x = -x; }
+
+    // Scaling and Squaring: reduce x to [0, 1) with bit-shift-equivalent
     int n = 0;
-    // Fix: Prevent infinite loop if x is Infinity or extremely large
-    // 2^1024 is larger than DBL_MAX, so n > 1024 is unreasonable
-    while (x > 1.0 && n < 2000) {
-        x /= 2.0;
-        n++;
-    }
+    while (x > 1.0 && n < 1024) { x *= 0.5; n++; }
 
-    // Prevent infinite loop if x is extremely large (prevent Inf return)
-    if (n >= 2000) return (x > 0) ? 1.79769e+308 : 0.0;
+    // Taylor series for x in [0, 1] — 16 terms gives full double precision
+    double sum = 1.0, term = 1.0;
+    for (int i = 1; i < 16; i++) { term *= x / i; sum += term; }
 
-    // Taylor series for small x
-    double sum = 1.0;
-    double term = 1.0;
-    for (int i = 1; i < 20; ++i) 
-    {
-        term *= x / i;
-        sum += term;
-    }
+    // Square back n times
+    for (int i = 0; i < n; i++) sum *= sum;
 
-    // Square n times
-    for (int i = 0; i < n; i++) {
-        sum *= sum;
-    }
-    
-    return sum;
+    return neg ? 1.0 / sum : sum;
 }
 
 double my_sqrt(double x)
 {
-    if (x < 0) return -1.0;
-    if (x == 0) return 0.0;
-    double guess = x / 2.0;
-    for (int i = 0; i < 20; i++)
-    {
-        guess = (guess + x / guess) / 2.0;
-    }
+    if (x <= 0) return 0.0;
+    // Seed with a fast approximation, then refine with 4 Newton-Raphson iterations
+    // (sufficient for ~13 decimal digits of precision)
+    double guess = x;
+    // Bit-hack seed via union to avoid UB
+    unsigned long long bits;
+    __builtin_memcpy(&bits, &x, 8);
+    bits = (bits >> 1) + 0x1FF8000000000000ULL;
+    __builtin_memcpy(&guess, &bits, 8);
+    guess = (guess + x / guess) * 0.5;
+    guess = (guess + x / guess) * 0.5;
+    guess = (guess + x / guess) * 0.5;
+    guess = (guess + x / guess) * 0.5;
     return guess;
 }
 

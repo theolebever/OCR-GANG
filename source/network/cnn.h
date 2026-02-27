@@ -20,25 +20,30 @@
 typedef struct {
     // Weights: [NUM_FILTERS][3][3]
     double filters[NUM_FILTERS][CONV_SIZE][CONV_SIZE];
-    double filter_grads[NUM_FILTERS][CONV_SIZE][CONV_SIZE]; // Gradients
-    
+    double filter_grads[NUM_FILTERS][CONV_SIZE][CONV_SIZE];
+
+    // Adam moment buffers for filters
+    double m_filters[NUM_FILTERS][CONV_SIZE][CONV_SIZE];
+    double v_filters[NUM_FILTERS][CONV_SIZE][CONV_SIZE];
+
     // Biases: [NUM_FILTERS]
     double biases[NUM_FILTERS];
     double bias_grads[NUM_FILTERS];
 
+    // Adam moment buffers for biases
+    double m_biases[NUM_FILTERS];
+    double v_biases[NUM_FILTERS];
+
+    // Adam timestep and running beta^t products
+    long adam_t;
+    double adam_beta1_t;
+    double adam_beta2_t;
+
     // Intermediate states for backprop
-    // We store the input to the conv layer (original image)
     double input[INPUT_H][INPUT_W];
-    
-    // We store the output of conv layer (before pool)
     double conv_output[NUM_FILTERS][CONV_H][CONV_W]; // 26x26
-    
-    // We store the output of pool layer (13x13)
-    double pool_output[NUM_FILTERS][POOL_H][POOL_W]; 
-    
-    // Mask for Max Pooling (to know which pixel was chosen)
-    // Stores the index (0-3) or flattened index of the max value
-    int pool_mask[NUM_FILTERS][POOL_H][POOL_W];
+    double pool_output[NUM_FILTERS][POOL_H][POOL_W];
+    int    pool_mask[NUM_FILTERS][POOL_H][POOL_W];
 
 } CNN;
 
