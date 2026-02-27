@@ -7,6 +7,7 @@
 #include <dirent.h>
 
 #include "../network/network.h"
+#include "../network/cnn.h"
 #include "../process/process.h"
 #include "../sdl/our_sdl.h"
 #include "../segmentation/segmentation.h"
@@ -331,37 +332,40 @@ void freeDataSet(TrainingDataSet *dataset)
 }
 
 // Helper to properly resize an image to 28x28
+// Mirrors the inference pipeline: square-pad on white, binarize r<128, then resize.
 double *resize_image_to_28x28(SDL_Surface *img)
 {
     double *input = calloc(784, sizeof(double));
     if (input == NULL) return NULL;
-    
-    // Create a temporary matrix for the original image
-    int original_size = img->w * img->h;
-    int *temp_matrix = malloc((original_size + 1) * sizeof(int));
+
+    // Square-pad: place the image centered on a white square canvas
+    int size = img->w > img->h ? img->w : img->h;
+    int off_x = size / 2 - img->w / 2;
+    int off_y = size / 2 - img->h / 2;
+
+    int *temp_matrix = calloc(size * size, sizeof(int)); // white (0) by default
     if (temp_matrix == NULL)
     {
         free(input);
         return NULL;
     }
-    
-    // Store size in first element
-    temp_matrix[0] = original_size;
-    
-    // Convert SDL_Surface to matrix
+
+    // Binarize using the same threshold as ImageToMatrix in segmentation.c
     for (int y = 0; y < img->h; y++)
     {
         for (int x = 0; x < img->w; x++)
         {
             Uint32 pixel = get_pixel(img, x, y);
-            Uint8 r = getRed(pixel, img->format);
-            // Black (0) -> 1, White (255) -> 0
-            temp_matrix[y * img->w + x + 1] = (r < 128) ? 1 : 0;
+            Uint8 r, g, b;
+            SDL_GetRGB(pixel, img->format, &r, &g, &b);
+            (void)g; (void)b;
+            // Match ImageToMatrix inference: r < 128 -> black (1), else -> white (0)
+            temp_matrix[(y + off_y) * size + (x + off_x)] = (r < 128) ? 1 : 0;
         }
     }
-    
+
     // Resize using the Resize1 function from segmentation
-    int *resized = Resize1(temp_matrix, 28, 28, img->w, img->h);
+    int *resized = Resize1(temp_matrix, 28, 28, size, size);
     free(temp_matrix);
     
     if (resized == NULL)
@@ -394,42 +398,43 @@ void load_directory(const char *path, TrainingDataSet *dataset, int is_uppercase
             {
                 char fullpath[512];
                 snprintf(fullpath, sizeof(fullpath), "%s/%s", path, dir->d_name);
-                
+
                 SDL_Surface *img = load__image(fullpath);
                 if (img)
                 {
-                    // Properly resize to 28x28
                     double *input = resize_image_to_28x28(img);
                     SDL_FreeSurface(img);
-                    
+
                     if (input == NULL)
                     {
                         printf("Warning: Failed to resize image %s\n", fullpath);
                         continue;
                     }
 
-                    // Add to dataset
-                    dataset->count++;
-                    dataset->inputs = realloc(dataset->inputs, sizeof(double*) * dataset->count);
-                    dataset->labels = realloc(dataset->labels, sizeof(char) * dataset->count);
-                    
-                    if (dataset->inputs == NULL || dataset->labels == NULL)
+                    // Grow arrays with capacity doubling (avoids realloc per element)
+                    if (dataset->count == dataset->capacity)
                     {
-                        free(input);
-                        printf("Error: Memory allocation failed\n");
-                        break;
+                        int new_cap = dataset->capacity == 0 ? 64 : dataset->capacity * 2;
+                        double **new_inputs = realloc(dataset->inputs, sizeof(double *) * new_cap);
+                        char   *new_labels  = realloc(dataset->labels, sizeof(char)     * new_cap);
+                        if (!new_inputs || !new_labels)
+                        {
+                            free(input);
+                            printf("Error: Memory allocation failed\n");
+                            break;
+                        }
+                        dataset->inputs   = new_inputs;
+                        dataset->labels   = new_labels;
+                        dataset->capacity = new_cap;
                     }
-                    
-                    dataset->inputs[dataset->count - 1] = input;
-                    
-                    // Label is the first character of the filename
-                    // E.g., "A0.png" -> 'A'
-                    // Ensure we handle case correctly based on directory
+
                     char label = dir->d_name[0];
                     if (is_uppercase && label >= 'a' && label <= 'z') label -= 32;
                     if (!is_uppercase && label >= 'A' && label <= 'Z') label += 32;
-                    
-                    dataset->labels[dataset->count - 1] = label;
+
+                    dataset->inputs[dataset->count] = input;
+                    dataset->labels[dataset->count] = label;
+                    dataset->count++;
                 }
             }
         }
@@ -445,12 +450,12 @@ TrainingDataSet *loadDataSet(void)
 {
     TrainingDataSet *dataset = malloc(sizeof(TrainingDataSet));
     if (dataset == NULL) return NULL;
-    
-    dataset->inputs = NULL;
-    dataset->labels = NULL;
-    dataset->count = 0;
 
-    // Removed duplicate message - will be printed by caller
+    dataset->inputs   = NULL;
+    dataset->labels   = NULL;
+    dataset->count    = 0;
+    dataset->capacity = 0;
+
     load_directory("img/training/maj", dataset, 1);
     load_directory("img/training/min", dataset, 0);
 
@@ -463,4 +468,40 @@ TrainingDataSet *loadDataSet(void)
     }
 
     return dataset;
+}
+
+void save_cnn(const char *filename, void *cnn_ptr)
+{
+    if (filename == NULL || cnn_ptr == NULL) return;
+    CNN *cnn = (CNN *)cnn_ptr;
+    FILE *f = fopen(filename, "w");
+    if (f == NULL) return;
+
+    for (int fi = 0; fi < NUM_FILTERS; fi++)
+    {
+        fprintf(f, "%lf\n", cnn->biases[fi]);
+        for (int i = 0; i < CONV_SIZE; i++)
+            for (int j = 0; j < CONV_SIZE; j++)
+                fprintf(f, "%lf\n", cnn->filters[fi][i][j]);
+    }
+
+    fclose(f);
+}
+
+void load_cnn(const char *filename, void *cnn_ptr)
+{
+    if (filename == NULL || cnn_ptr == NULL) return;
+    CNN *cnn = (CNN *)cnn_ptr;
+    FILE *f = fopen(filename, "r");
+    if (f == NULL) return;
+
+    for (int fi = 0; fi < NUM_FILTERS; fi++)
+    {
+        fscanf(f, "%lf\n", &cnn->biases[fi]);
+        for (int i = 0; i < CONV_SIZE; i++)
+            for (int j = 0; j < CONV_SIZE; j++)
+                fscanf(f, "%lf\n", &cnn->filters[fi][i][j]);
+    }
+
+    fclose(f);
 }

@@ -1,43 +1,14 @@
 #include "training.h"
 #include "../network/tools.h"
 #include "../network/network.h"
+#include "../network/cnn.h"
 #include "augmentation.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <err.h>
 
-void PrintTrainingStats(char expected, char recognized, int *correct_count, int total_count)
-{
-    static int batch_correct = 0;
-    static int batch_total = 0;
-    static int last_reported_percent = 0;
 
-    if (expected == recognized)
-    {
-        (*correct_count)++;
-        batch_correct++;
-    }
-
-    batch_total++;
-    float accuracy = (float)(*correct_count) / total_count * 100.0f;
-
-    if (batch_total >= 100)
-    {
-        float batch_accuracy = (float)batch_correct / batch_total * 100.0f;
-        int current_percent = (int)accuracy;
-
-        if (current_percent != last_reported_percent || total_count % 500 == 0)
-        {
-            printf("\rOverall Accuracy: %.2f%% | Last 100 samples: %.2f%% | Total samples: %d",
-                   accuracy, batch_accuracy, total_count);
-            fflush(stdout);
-            last_reported_percent = current_percent;
-        }
-
-        batch_correct = 0;
-        batch_total = 0;
-    }
-}
 
 void TrainNetwork(void)
 {
@@ -45,89 +16,46 @@ void TrainNetwork(void)
     TrainingDataSet *dataset = loadDataSet();
     
     if (dataset == NULL)
-    {
         errx(1, "Failed to load dataset!");
-    }
 
-    // Augment dataset (10x size)
-    augment_dataset(dataset, 10);
+    // Augment dataset (50x size)
+    augment_dataset(dataset, 50);
     
     printf("\n=== DATASET ANALYSIS ===\n");
     printf("Total samples: %d\n", dataset->count);
-    
-    // Check class distribution
-    int class_counts[52] = {0};
-    for (int i = 0; i < dataset->count; i++)
+
+    // Initialize CNN (load saved weights if they exist)
+    printf("\nInitializing CNN (Conv 3x3 -> Pool 2x2)...\n");
+    CNN *cnn = init_cnn();
+    if (!cnn) errx(1, "Failed to init CNN");
+    if (!fileempty("source/OCR-data/cnnwb.txt"))
     {
-        size_t pos = ExpectedPos(dataset->labels[i]);
-        if (pos < 52) class_counts[pos]++;
-    }
-    
-    int classes_with_data = 0;
-    int min_samples = dataset->count;
-    int max_samples = 0;
-    
-    for (int i = 0; i < 52; i++)
-    {
-        if (class_counts[i] > 0)
-        {
-            classes_with_data++;
-            if (class_counts[i] < min_samples) min_samples = class_counts[i];
-            if (class_counts[i] > max_samples) max_samples = class_counts[i];
-        }
-    }
-    
-    printf("Classes with data: %d/52\n", classes_with_data);
-    printf("Samples per class - Min: %d, Max: %d, Avg: %.1f\n", 
-           min_samples, max_samples, (float)dataset->count / (float)classes_with_data);
-    
-    // WARNING for tiny datasets
-    if (dataset->count < 1000)
-    {
-        printf("\n WARNING: Dataset is extremely small!\n");
-        printf("   Recommended: At least 50-100 samples per class\n");
-        printf("   Current: ~%.1f samples per class\n", (float)dataset->count / 52.0f);
-        printf("   Network will struggle to learn effectively.\n");
+        load_cnn("source/OCR-data/cnnwb.txt", cnn);
+        printf("Loaded CNN weights from source/OCR-data/cnnwb.txt\n");
     }
 
-    // CRITICAL: Use smaller network for tiny datasets to prevent overfitting
-    // Rule of thumb: hidden nodes should be ~sqrt(inputs * outputs)
-    // sqrt(784 * 52) ≈ 200, but for tiny dataset use much less
-    int hidden_nodes = OCR_HIDDEN_NODES;  // Very small to prevent overfitting
-    
+    // Initialize MLP with CNN output size (1352 inputs)
+    // 1352 = 8 filters * 13 * 13
+    int hidden_nodes = OCR_HIDDEN_NODES; 
     printf("\n=== NETWORK CONFIGURATION ===\n");
-    printf("Architecture: 784-%d-52\n", hidden_nodes);
-    printf("Total parameters: %d\n", (784 * hidden_nodes) + hidden_nodes + (hidden_nodes * 52) + 52);
+    printf("Architecture: CNN -> %d-%d-52\n", FLATTEN_SIZE, hidden_nodes);
     
-    struct network *net = InitializeNetwork(784, hidden_nodes, 52, "source/OCR-data/ocrwb.txt");
-    
-    if (net == NULL)
-    {
-        freeDataSet(dataset);
-        errx(1, "Failed to initialize network!");
-    }
+    struct network *net = InitializeNetwork(FLATTEN_SIZE, hidden_nodes, 52, "source/OCR-data/ocrwb.txt");
+    if (net == NULL) errx(1, "Failed to initialize network!");
 
-    // For tiny datasets: many epochs with very low learning rate
-    int epochs = 200;  // More epochs since we learn slowly
-    
-    // Create an index array for shuffling
+    int epochs = 200;
     int *indices = malloc(sizeof(int) * dataset->count);
     for(int i = 0; i < dataset->count; i++) indices[i] = i;
 
     // Training Hyperparameters
-    net->eta = 0.1f;       // Learning Rate
-    net->alpha = 0.5f;     // Momentum
+    net->eta = 0.01f;
+    net->alpha = 0.9f;
 
-    printf("\n=== TRAINING CONFIGURATION ===\n");
-    printf("Epochs: %d\n", epochs);
     printf("Learning rate: %.5f\n", net->eta);
-    printf("Momentum: %.2f\n", net->alpha);
-    printf("Samples per epoch: %d\n\n", dataset->count);
+    printf("Momentum: %.2f\n\n", net->alpha);
 
-    // Track best accuracy
     float best_accuracy = 0.0f;
     int epochs_without_improvement = 0;
-    int save_interval = 10;
     
     printf("Starting Training...\n");
     printf("================================================================================\n");
@@ -138,112 +66,79 @@ void TrainNetwork(void)
         int epoch_correct = 0;
         double total_error = 0.0;
         
-        // Train on all samples
         for (int i = 0; i < dataset->count; i++)
         {
             int idx = indices[i];
             
-            // Load input
-            for(int j = 0; j < 784; j++) {
-                net->input_layer[j] = dataset->inputs[idx][j];
-            }
+            // 1. CNN Forward — writes directly into MLP input layer, no malloc
+            cnn_forward(cnn, dataset->inputs[idx], net->input_layer);
+            
+            // 3. Set Goal
+            memset(net->goal, 0, sizeof(double) * net->number_of_outputs);
+            int labelIndex = -1;
+            char label = dataset->labels[idx];
+             if (label >= 'A' && label <= 'Z') labelIndex = label - 'A';
+             else if (label >= 'a' && label <= 'z') labelIndex = label - 'a' + 26;
 
-            // Set goal
-            ExpectedOutput(net, dataset->labels[idx]);
+             if (labelIndex != -1) net->goal[labelIndex] = 1.0;
 
-            // Forward pass
+            // 4. MLP Forward
             forward_pass(net);
 
-            // Calculate Loss (MSE) for monitoring
-            for(int o=0; o<net->number_of_outputs; o++) {
-                double err = net->goal[o] - net->output_layer[o];
-                total_error += 0.5 * err * err;
-            }
+            // Display loss: 1 - p_correct (goes to 0 as network improves)
+            double p = net->output_layer[labelIndex > -1 ? labelIndex : 0];
+            total_error += 1.0 - p;
 
-            // Back propagation
+            int max_out = 0;
+            for (int o = 1; o < net->number_of_outputs; o++)
+                if (net->output_layer[o] > net->output_layer[max_out]) max_out = o;
+            if (max_out == labelIndex) epoch_correct++;
+
+            // 5. MLP Backward
             back_propagation(net);
 
-            // Check prediction
-            size_t answer_idx = IndexAnswer(net);
-            char recognized = RetrieveChar(answer_idx);
-            if (recognized == dataset->labels[idx])
-            {
-                epoch_correct++;
-            }
+            // 6. CNN Backward — use a smaller LR than the MLP to keep gradients stable
+            cnn_backward(cnn, net->delta_input, net->eta * 0.1);
         }
         
         float epoch_accuracy = (float)epoch_correct / dataset->count * 100.0f;
-        double avg_loss = total_error / dataset->count;
-        
-        // Print progress with Loss
-        printf("Epoch %3d/%d | Accuracy: %6.2f%% | Loss: %.5f", 
+        double avg_loss = total_error / dataset->count; // avg (1 - p_correct), range [0,1]
+
+        printf("Epoch %3d/%d | Accuracy: %6.2f%% | Loss: %.5f",
                epoch + 1, epochs, epoch_accuracy, avg_loss);
         
-        // Track improvement
         if (epoch_accuracy > best_accuracy)
         {
             best_accuracy = epoch_accuracy;
             epochs_without_improvement = 0;
             printf(" * NEW BEST");
-            save_network("source/OCR-data/ocrwb.txt", net);  // Save on improvement
+            save_network("source/OCR-data/ocrwb.txt", net);
+            save_cnn("source/OCR-data/cnnwb.txt", cnn);
         }
         else
         {
             epochs_without_improvement++;
         }
-        
         printf("\n");
         
-        // Periodic save
-        if ((epoch + 1) % save_interval == 0)
-        {
-            save_network("source/OCR-data/ocrwb.txt", net);
-        }
-        
-        // Learning rate decay
-        if ((epoch + 1) % 50 == 0 && net->eta > 0.0001)
-        {
-            net->eta *= 0.9;
+         if ((epoch + 1) % 50 == 0 && net->eta > 0.001) {
+            net->eta *= 0.8; 
             printf("    -> Learning rate adjusted to: %.6f\n", net->eta);
         }
-        
-        // Early stopping
-        if (epochs_without_improvement >= 50) // Increased patience
+
+        if (epochs_without_improvement >= 30) // Stricter checking
         {
-            printf("\nEarly stopping: No improvement for 50 epochs.\n");
+            printf("\nEarly stopping.\n");
             break;
         }
     }
 
-    printf("================================================================================\n");
-    printf("\n=== TRAINING SUMMARY ===\n");
-    printf("Best Accuracy Achieved: %.2f%%\n", best_accuracy);
-    printf("Expected for this dataset size: 10-30%% (severely limited by data)\n");
-    
-    if (best_accuracy < 20.0f)
-    {
-        printf("\nCRITICAL: Accuracy is very low!\n");
-        printf("   Primary issue: Dataset too small (only %d samples)\n", dataset->count);
-        printf("   Solutions:\n");
-        printf("   1. Collect more training data (aim for 2600+ samples)\n");
-        printf("   2. Use data augmentation (rotate, scale, shift images)\n");
-        printf("   3. Reduce number of classes (e.g., only uppercase OR lowercase)\n");
-    }
-    else if (best_accuracy < 50.0f)
-    {
-        printf("\nLow accuracy - dataset still too small\n");
-        printf("   Need more samples for reliable OCR\n");
-    }
-    else
-    {
-        printf("\nReasonable accuracy for dataset size\n");
-    }
-    
     printf("\nSaving final model...\n");
     save_network("source/OCR-data/ocrwb.txt", net);
-    printf("Model saved to: source/OCR-data/ocrwb.txt\n");
+    save_cnn("source/OCR-data/cnnwb.txt", cnn);
     
     free(indices);
     freeDataSet(dataset);
     freeNetwork(net);
+    free_cnn(cnn);
 }

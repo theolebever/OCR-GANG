@@ -8,6 +8,7 @@ struct network
     int number_of_hidden_nodes;
     int number_of_outputs;
     double *input_layer;
+    double *delta_input; // Gradients for the input layer (needed for CNN backprop)
 
     double *hidden_layer;
     double *delta_hidden;

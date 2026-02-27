@@ -1,13 +1,15 @@
 #include "ocr.h"
 #include "../network/tools.h"
 #include "../network/network.h"
+#include "../network/cnn.h"
 #include "../sdl/our_sdl.h"
 #include "../segmentation/segmentation.h"
 #include "../process/process.h"
-#include "../GUI/gui.h" // For filename and text externs if needed, or we redefine them/pass them
+#include "../GUI/gui.h"
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <err.h>
 
 // Helper to avoid duplication
@@ -15,10 +17,16 @@ char* PerformOCR(char *filepath)
 {
     if (filepath == NULL) return NULL;
 
-    // Initialize neural network
-    struct network *network = InitializeNetwork(28 * 28, OCR_HIDDEN_NODES, 52, "source/OCR-data/ocrwb.txt");
+    // Initialize CNN and load its saved weights
+    CNN *cnn = init_cnn();
+    if (cnn == NULL) return NULL;
+    load_cnn("source/OCR-data/cnnwb.txt", cnn);
+
+    // Initialize MLP with CNN output size (must match training: FLATTEN_SIZE inputs)
+    struct network *network = InitializeNetwork(FLATTEN_SIZE, OCR_HIDDEN_NODES, 52, "source/OCR-data/ocrwb.txt");
     if (network == NULL)
     {
+        free_cnn(cnn);
         return NULL;
     }
 
@@ -28,6 +36,7 @@ char* PerformOCR(char *filepath)
     if (image == NULL)
     {
         freeNetwork(network);
+        free_cnn(cnn);
         SDL_Quit();
         return NULL;
     }
@@ -46,6 +55,7 @@ char* PerformOCR(char *filepath)
         free(chars);
         free(blocs);
         freeNetwork(network);
+        free_cnn(cnn);
         SDL_Quit();
         return NULL;
     }
@@ -57,6 +67,7 @@ char* PerformOCR(char *filepath)
         free(chars);
         free(blocs);
         freeNetwork(network);
+        free_cnn(cnn);
         SDL_Quit();
         return NULL;
     }
@@ -68,9 +79,7 @@ char* PerformOCR(char *filepath)
     for (int j = 0; j < BlocCount; ++j)
     {
         if (blocs[j] != NULL)
-        {
             SDL_FreeSurface(blocs[j]);
-        }
     }
 
     // Convert image to matrix for neural network processing
@@ -85,6 +94,7 @@ char* PerformOCR(char *filepath)
         free(blocs);
         free(charslen);
         freeNetwork(network);
+        free_cnn(cnn);
         SDL_Quit();
         return NULL;
     }
@@ -92,9 +102,24 @@ char* PerformOCR(char *filepath)
     // Process each character
     for (int index = 0; index < chars_count; index++)
     {
-        int is_space = InputImage(network, index, &chars_matrix);
+        // Check for space (all-zero pixel matrix)
+        int is_space = 1;
+        for (int i = 0; i < 784; i++)
+        {
+            if (chars_matrix[index][i] == 1) { is_space = 0; break; }
+        }
+
         if (!is_space)
         {
+            // Build double[784] from int[784]
+            double img_double[784];
+            for (int i = 0; i < 784; i++)
+                img_double[i] = (double)chars_matrix[index][i];
+
+            // Run CNN forward pass — writes directly into MLP input layer, no malloc
+            cnn_forward(cnn, img_double, network->input_layer);
+
+            // Run MLP forward pass
             forward_pass(network);
             size_t index_answer = IndexAnswer(network);
             result[index] = RetrieveChar(index_answer);
@@ -104,9 +129,10 @@ char* PerformOCR(char *filepath)
             result[index] = ' ';
         }
     }
-    result[chars_count] = '\0'; // Ensure string is properly terminated
+    result[chars_count] = '\0';
 
     freeNetwork(network);
+    free_cnn(cnn);
 
     for (int i = 0; i < chars_count; i++)
         free(chars_matrix[i]);
@@ -123,9 +149,6 @@ char* PerformOCR(char *filepath)
             }
             free(chars[b]);
         }
-
-        if (blocs && blocs[b])
-            SDL_FreeSurface(blocs[b]);
     }
 
     free(chars);
@@ -186,26 +209,13 @@ int OCR(GtkButton *button, GtkTextBuffer *buffer)
     g_print("OCR Done !\n");
     g_print("Result: %s\n", result);
 
-    text = result; // Update global text pointer (careful with memory management here)
-    // In original code, result was freed at end of OCR, but text pointed to it?
-    // Original code:
-    // text = result;
-    // gtk_text_buffer_set_text(buffer, result, strlen(result));
-    // free(result);
-    // This is a bug in original code! text points to freed memory.
-    // I will fix this by NOT freeing result immediately if text needs it, 
-    // OR strdup it, OR just let text point to buffer content.
-    // For now, I will follow original logic but maybe fix the use-after-free if I can.
-    
-    gtk_text_buffer_set_text(buffer, result, strlen(result));
-    
-    // If text is used elsewhere, we shouldn't free result yet.
-    // But `text` is global.
-    // I'll just keep the original behavior but maybe comment on it.
-    // Actually, I'll duplicate it for `text` if needed, or just free it.
-    // Let's just free it to be safe and set text to NULL or something safe?
-    // The original code was definitely risky.
-    
-    free(result);
+    // Free previous OCR result if there was one
+    if (text != NULL)
+        free(text);
+
+    // text takes ownership of result; do not free result separately
+    text = result;
+    gtk_text_buffer_set_text(buffer, text, strlen(text));
+
     return EXIT_SUCCESS;
 }

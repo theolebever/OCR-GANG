@@ -5,7 +5,7 @@
 #include "../ocr/ocr.h"
 
 gchar *filename = "";
-char *text = "";
+char *text = NULL;
 GtkWidget *parent;
 
 void save_text(GtkButton *button, GtkTextBuffer *buffer)
@@ -23,9 +23,7 @@ void save_text(GtkButton *button, GtkTextBuffer *buffer)
         filename = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog));
         /* set the contents of the file to the text from the buffer */
         if (filename != NULL)
-            g_file_set_contents(filename, text, strlen(text), NULL);
-        else
-            g_file_set_contents(filename, text, strlen(text), NULL);
+            g_file_set_contents(filename, text ? text : "", text ? strlen(text) : 0, NULL);
     }
     gtk_widget_destroy(dialog);
 }

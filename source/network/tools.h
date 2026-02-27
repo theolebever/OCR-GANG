@@ -4,12 +4,14 @@
 #include <stddef.h>
 #include "../network/network.h"
 
+
 // Training dataset structure for efficient data loading
 typedef struct
 {
     double **inputs;  // Array of input vectors (each 784 values for 28x28 images)
     char *labels;     // Array of expected characters
     int count;        // Total number of training samples
+    int capacity;     // Allocated capacity (for pre-allocation, internal use)
 } TrainingDataSet;
 
 void progressBar(int step, int nb);
@@ -28,6 +30,9 @@ int cfileexists(const char *filename);
 int fileempty(const char *filename);
 void save_network(const char *filename, struct network *network);
 void load_network(const char *filename, struct network *network);
+// CNN save/load — uses void* to avoid circular include with cnn.h
+void save_cnn(const char *filename, void *cnn);
+void load_cnn(const char *filename, void *cnn);
 void shuffle(int *array, size_t n);
 size_t IndexAnswer(struct network *net);
 char RetrieveChar(size_t val);

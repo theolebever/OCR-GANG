@@ -9,9 +9,10 @@
 // Returns 1 on success, 0 on failure
 int augment_dataset(TrainingDataSet *dataset, int multiplier);
 
-// Individual transformation functions (exposed for testing if needed)
-double *rotate_matrix(double *input, double angle);
-double *shift_matrix(double *input, int dx, int dy);
-double *add_noise(double *input, double intensity);
+// Individual transformation functions — write into caller-supplied output[784]
+void rotate_matrix(double *input, double angle, double *output);
+void shift_matrix(double *input, int dx, int dy, double *output);
+void scale_matrix(double *input, double scale_factor, double *output);
+void add_noise(double *input, double intensity, double *output);
 
 #endif
