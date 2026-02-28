@@ -1,7 +1,5 @@
-// File for Sigmoid functions in particular and other functions needed for
-// operating the neural network Used for tweaking the weigth of each node in the
-// neural network
 #include "network.h"
+#include "../common.h"
 
 #include <err.h>
 #include <stdio.h>
@@ -10,10 +8,6 @@
 
 #include "tools.h"
 
-// Adam hyperparameters
-#define ADAM_BETA1  0.9
-#define ADAM_BETA2  0.999
-#define ADAM_EPS    1e-8
 
 void freeNetwork(struct network *net)
 {
@@ -210,6 +204,7 @@ void forward_pass(struct network *net)
     for (int i = 0; i < net->number_of_inputs; i++)
     {
         double in_i = net->input_layer[i];
+        if (in_i == 0.0) continue;
         double *w_row = net->hidden_weights + i * H;
         for (int j = 0; j < H; j++)
             net->hidden_layer[j] += in_i * w_row[j];
@@ -254,8 +249,10 @@ void back_propagation(struct network *net)
     net->adam_t += 1;
     net->adam_beta1_t *= ADAM_BETA1;
     net->adam_beta2_t *= ADAM_BETA2;
-    double bc1 = 1.0 - net->adam_beta1_t;
-    double bc2 = 1.0 - net->adam_beta2_t;
+
+    // Precompute inverse bias corrections (avoids division in inner loops)
+    double inv_bc1 = 1.0 / (1.0 - net->adam_beta1_t);
+    double inv_bc2 = 1.0 / (1.0 - net->adam_beta2_t);
 
     // Output layer delta (Softmax + Cross Entropy combined gradient)
     for (int o = 0; o < O; o++)
@@ -272,7 +269,6 @@ void back_propagation(struct network *net)
     }
 
     // Update output weights with Adam
-    // Skip rows where hidden activation is zero (dead ReLU neurons)
     for (int h = 0; h < H; h++)
     {
         double hid_h = net->hidden_layer[h];
@@ -285,8 +281,8 @@ void back_propagation(struct network *net)
             double grad = net->delta_output[o] * hid_h;
             m_row[o] = ADAM_BETA1 * m_row[o] + (1.0 - ADAM_BETA1) * grad;
             v_row[o] = ADAM_BETA2 * v_row[o] + (1.0 - ADAM_BETA2) * grad * grad;
-            double m_hat = m_row[o] / bc1;
-            double v_hat = v_row[o] / bc2;
+            double m_hat = m_row[o] * inv_bc1;
+            double v_hat = v_row[o] * inv_bc2;
             w_row[o] -= eta * m_hat / (my_sqrt(v_hat) + ADAM_EPS);
         }
     }
@@ -297,13 +293,12 @@ void back_propagation(struct network *net)
         double grad = net->delta_output[o];
         net->m_output_bias[o] = ADAM_BETA1 * net->m_output_bias[o] + (1.0 - ADAM_BETA1) * grad;
         net->v_output_bias[o] = ADAM_BETA2 * net->v_output_bias[o] + (1.0 - ADAM_BETA2) * grad * grad;
-        double m_hat = net->m_output_bias[o] / bc1;
-        double v_hat = net->v_output_bias[o] / bc2;
+        double m_hat = net->m_output_bias[o] * inv_bc1;
+        double v_hat = net->v_output_bias[o] * inv_bc2;
         net->output_layer_bias[o] -= eta * m_hat / (my_sqrt(v_hat) + ADAM_EPS);
     }
 
     // Update hidden weights with Adam
-    // Skip rows where input is zero — no gradient flows, moments unchanged
     for (int i = 0; i < net->number_of_inputs; i++)
     {
         double in_i = net->input_layer[i];
@@ -316,8 +311,8 @@ void back_propagation(struct network *net)
             double grad = net->delta_hidden[h] * in_i;
             m_row[h] = ADAM_BETA1 * m_row[h] + (1.0 - ADAM_BETA1) * grad;
             v_row[h] = ADAM_BETA2 * v_row[h] + (1.0 - ADAM_BETA2) * grad * grad;
-            double m_hat = m_row[h] / bc1;
-            double v_hat = v_row[h] / bc2;
+            double m_hat = m_row[h] * inv_bc1;
+            double v_hat = v_row[h] * inv_bc2;
             w_row[h] -= eta * m_hat / (my_sqrt(v_hat) + ADAM_EPS);
         }
     }
@@ -328,8 +323,8 @@ void back_propagation(struct network *net)
         double grad = net->delta_hidden[h];
         net->m_hidden_bias[h] = ADAM_BETA1 * net->m_hidden_bias[h] + (1.0 - ADAM_BETA1) * grad;
         net->v_hidden_bias[h] = ADAM_BETA2 * net->v_hidden_bias[h] + (1.0 - ADAM_BETA2) * grad * grad;
-        double m_hat = net->m_hidden_bias[h] / bc1;
-        double v_hat = net->v_hidden_bias[h] / bc2;
+        double m_hat = net->m_hidden_bias[h] * inv_bc1;
+        double v_hat = net->v_hidden_bias[h] * inv_bc2;
         net->hidden_layer_bias[h] -= eta * m_hat / (my_sqrt(v_hat) + ADAM_EPS);
     }
 
@@ -347,14 +342,14 @@ void back_propagation(struct network *net)
 
 int InputImage(struct network *net, size_t index, int ***chars_matrix)
 {
-    int is_espace = 1;
-    for (size_t i = 0; i < 784; i++)
+    int is_space = 1;
+    for (size_t i = 0; i < IMAGE_PIXELS; i++)
     {
         net->input_layer[i] = (*chars_matrix)[index][i];
         if (net->input_layer[i] == 1)
         {
-            is_espace = 0;
+            is_space = 0;
         }
     }
-    return is_espace;
+    return is_space;
 }

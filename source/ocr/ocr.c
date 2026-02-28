@@ -1,4 +1,6 @@
 #include "ocr.h"
+#include "../common.h"
+#include "../common.h"
 #include "../network/tools.h"
 #include "../network/network.h"
 #include "../network/cnn.h"
@@ -20,10 +22,10 @@ char* PerformOCR(char *filepath)
     // Initialize CNN and load its saved weights
     CNN *cnn = init_cnn();
     if (cnn == NULL) return NULL;
-    load_cnn("source/OCR-data/cnnwb.txt", cnn);
+    load_cnn(OCR_CNN_WEIGHTS, cnn);
 
     // Initialize MLP with CNN output size (must match training: FLATTEN_SIZE inputs)
-    struct network *network = InitializeNetwork(FLATTEN_SIZE, OCR_HIDDEN_NODES, 52, "source/OCR-data/ocrwb.txt");
+    struct network *network = InitializeNetwork(FLATTEN_SIZE, OCR_HIDDEN_NODES, 52, OCR_MLP_WEIGHTS);
     if (network == NULL)
     {
         free_cnn(cnn);
@@ -32,7 +34,7 @@ char* PerformOCR(char *filepath)
 
     // Initialize SDL and load image
     init_sdl();
-    SDL_Surface *image = load__image(filepath);
+    SDL_Surface *image = load_image(filepath);
     if (image == NULL)
     {
         freeNetwork(network);
@@ -104,16 +106,16 @@ char* PerformOCR(char *filepath)
     {
         // Check for space (all-zero pixel matrix)
         int is_space = 1;
-        for (int i = 0; i < 784; i++)
+        for (int i = 0; i < IMAGE_PIXELS; i++)
         {
             if (chars_matrix[index][i] == 1) { is_space = 0; break; }
         }
 
         if (!is_space)
         {
-            // Build double[784] from int[784]
-            double img_double[784];
-            for (int i = 0; i < 784; i++)
+            // Build double array from int array
+            double img_double[IMAGE_PIXELS];
+            for (int i = 0; i < IMAGE_PIXELS; i++)
                 img_double[i] = (double)chars_matrix[index][i];
 
             // Run CNN forward pass — writes directly into MLP input layer, no malloc

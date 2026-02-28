@@ -1,9 +1,9 @@
 #include "../network/tools.h"
+#include "../common.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <math.h>
 #include <dirent.h>
 
 #include "../network/network.h"
@@ -14,9 +14,6 @@
 #include "SDL/SDL.h"
 #include "SDL/SDL_image.h"
 
-#define KRED "\x1B[31m"
-#define KWHT "\x1B[37m"
-#define KGRN "\x1B[32m"
 
 void progressBar(int step, int nb)
 {
@@ -40,20 +37,27 @@ double expo(double x)
     if (x >  709.0) return 1.79769e+308;
     if (x < -709.0) return 0.0;
 
-    // Handle negative x without recursion
+    // Handle negative x
     int neg = 0;
     if (x < 0.0) { neg = 1; x = -x; }
 
-    // Scaling and Squaring: reduce x to [0, 1) with bit-shift-equivalent
-    int n = 0;
-    while (x > 1.0 && n < 1024) { x *= 0.5; n++; }
+    // O(1) range reduction: x = n*ln(2) + r, where r in [0, ln2)
+    // Then exp(x) = 2^n * exp(r)
+    int n = (int)(x * MY_INV_LN2);
+    double r = x - n * MY_LN2;
 
-    // Taylor series for x in [0, 1] — 16 terms gives full double precision
+    // Taylor series for r in [0, 0.693] — 12 terms suffice for double precision
     double sum = 1.0, term = 1.0;
-    for (int i = 1; i < 16; i++) { term *= x / i; sum += term; }
+    for (int i = 1; i <= 12; i++) { term *= r / i; sum += term; }
 
-    // Square back n times
-    for (int i = 0; i < n; i++) sum *= sum;
+    // Compute 2^n using IEEE 754 bit manipulation (exact, O(1))
+    if (n > 0)
+    {
+        unsigned long long bits = (unsigned long long)(n + 1023) << 52;
+        double pow2;
+        __builtin_memcpy(&pow2, &bits, 8);
+        sum *= pow2;
+    }
 
     return neg ? 1.0 / sum : sum;
 }
@@ -74,6 +78,32 @@ double my_sqrt(double x)
     guess = (guess + x / guess) * 0.5;
     guess = (guess + x / guess) * 0.5;
     return guess;
+}
+
+// Sine via minimax polynomial on [-pi, pi]
+// Uses range reduction to [-pi, pi], then 7th-degree polynomial
+double my_sin(double x)
+{
+    // Range reduction to [-pi, pi]
+    x = x - MY_TWO_PI * (int)(x * (1.0 / MY_TWO_PI));
+    if (x > MY_PI) x -= MY_TWO_PI;
+    else if (x < -MY_PI) x += MY_TWO_PI;
+
+    // Minimax 7th-degree polynomial for sin(x) on [-pi, pi]
+    // sin(x) ≈ x - x^3/6 + x^5/120 - x^7/5040
+    double x2 = x * x;
+    return x * (1.0 + x2 * (-1.0/6.0 + x2 * (1.0/120.0 + x2 * (-1.0/5040.0))));
+}
+
+double my_cos(double x)
+{
+    return my_sin(x + MY_HALF_PI);
+}
+
+// Fast rounding for non-negative values
+static inline int my_round(double x)
+{
+    return (x >= 0.0) ? (int)(x + 0.5) : -(int)(-x + 0.5);
 }
 
 double sigmoid(double x)
@@ -108,13 +138,14 @@ void softmax(double *input, int n)
     double sum = 0.0;
     for (int i = 0; i < n; i++)
     {
-        input[i] = expo(input[i] - max); // Subtract max for numerical stability
+        input[i] = expo(input[i] - max);
         sum += input[i];
     }
 
+    double inv_sum = 1.0 / sum;
     for (int i = 0; i < n; i++)
     {
-        input[i] /= sum;
+        input[i] *= inv_sum;
     }
 }
 
@@ -327,7 +358,7 @@ void freeDataSet(TrainingDataSet *dataset)
 // Mirrors the inference pipeline: square-pad on white, binarize r<128, then resize.
 double *resize_image_to_28x28(SDL_Surface *img)
 {
-    double *input = calloc(784, sizeof(double));
+    double *input = calloc(IMAGE_PIXELS, sizeof(double));
     if (input == NULL) return NULL;
 
     // Square-pad: place the image centered on a white square canvas
@@ -357,7 +388,7 @@ double *resize_image_to_28x28(SDL_Surface *img)
     }
 
     // Resize using the Resize1 function from segmentation
-    int *resized = Resize1(temp_matrix, 28, 28, size, size);
+    int *resized = Resize1(temp_matrix, IMAGE_SIZE, IMAGE_SIZE, size, size);
     free(temp_matrix);
     
     if (resized == NULL)
@@ -367,7 +398,7 @@ double *resize_image_to_28x28(SDL_Surface *img)
     }
     
     // Convert to double array
-    for (int i = 0; i < 784; i++)
+    for (int i = 0; i < IMAGE_PIXELS; i++)
     {
         input[i] = (double)resized[i];
     }
@@ -391,7 +422,7 @@ void load_directory(const char *path, TrainingDataSet *dataset, int is_uppercase
                 char fullpath[512];
                 snprintf(fullpath, sizeof(fullpath), "%s/%s", path, dir->d_name);
 
-                SDL_Surface *img = load__image(fullpath);
+                SDL_Surface *img = load_image(fullpath);
                 if (img)
                 {
                     double *input = resize_image_to_28x28(img);

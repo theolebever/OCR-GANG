@@ -1,4 +1,5 @@
 #include "training.h"
+#include "../common.h"
 #include "../network/tools.h"
 #include "../network/network.h"
 #include "../network/cnn.h"
@@ -28,9 +29,9 @@ void TrainNetwork(void)
     printf("\nInitializing CNN (Conv 3x3 -> Pool 2x2)...\n");
     CNN *cnn = init_cnn();
     if (!cnn) errx(1, "Failed to init CNN");
-    if (!fileempty("source/OCR-data/cnnwb.txt"))
+    if (!fileempty(OCR_CNN_WEIGHTS))
     {
-        load_cnn("source/OCR-data/cnnwb.txt", cnn);
+        load_cnn(OCR_CNN_WEIGHTS, cnn);
         printf("Loaded CNN weights from source/OCR-data/cnnwb.txt\n");
     }
 
@@ -40,7 +41,7 @@ void TrainNetwork(void)
     printf("\n=== NETWORK CONFIGURATION ===\n");
     printf("Architecture: CNN -> %d-%d-52\n", FLATTEN_SIZE, hidden_nodes);
     
-    struct network *net = InitializeNetwork(FLATTEN_SIZE, hidden_nodes, 52, "source/OCR-data/ocrwb.txt");
+    struct network *net = InitializeNetwork(FLATTEN_SIZE, hidden_nodes, 52, OCR_MLP_WEIGHTS);
     if (net == NULL) errx(1, "Failed to initialize network!");
 
     int epochs = 200;
@@ -64,21 +65,23 @@ void TrainNetwork(void)
         int epoch_correct = 0;
         double total_error = 0.0;
         
+        int prev_label_idx = -1;
         for (int i = 0; i < dataset->count; i++)
         {
             int idx = indices[i];
-            
-            // 1. CNN Forward — writes directly into MLP input layer, no malloc
+
+            // 1. CNN Forward
             cnn_forward(cnn, dataset->inputs[idx], net->input_layer);
-            
-            // 3. Set Goal
-            memset(net->goal, 0, sizeof(double) * net->number_of_outputs);
+
+            // 2. Set Goal (selective reset: only clear previous, set new)
+            if (prev_label_idx >= 0) net->goal[prev_label_idx] = 0.0;
             int labelIndex = -1;
             char label = dataset->labels[idx];
-             if (label >= 'A' && label <= 'Z') labelIndex = label - 'A';
-             else if (label >= 'a' && label <= 'z') labelIndex = label - 'a' + 26;
+            if (label >= 'A' && label <= 'Z') labelIndex = label - 'A';
+            else if (label >= 'a' && label <= 'z') labelIndex = label - 'a' + 26;
 
-             if (labelIndex != -1) net->goal[labelIndex] = 1.0;
+            if (labelIndex != -1) net->goal[labelIndex] = 1.0;
+            prev_label_idx = labelIndex;
 
             // 4. MLP Forward
             forward_pass(net);
@@ -110,8 +113,8 @@ void TrainNetwork(void)
             best_accuracy = epoch_accuracy;
             epochs_without_improvement = 0;
             printf(" * NEW BEST");
-            save_network("source/OCR-data/ocrwb.txt", net);
-            save_cnn("source/OCR-data/cnnwb.txt", cnn);
+            save_network(OCR_MLP_WEIGHTS, net);
+            save_cnn(OCR_CNN_WEIGHTS, cnn);
         }
         else
         {
@@ -132,8 +135,8 @@ void TrainNetwork(void)
     }
 
     printf("\nSaving final model...\n");
-    save_network("source/OCR-data/ocrwb.txt", net);
-    save_cnn("source/OCR-data/cnnwb.txt", cnn);
+    save_network(OCR_MLP_WEIGHTS, net);
+    save_cnn(OCR_CNN_WEIGHTS, cnn);
     
     free(indices);
     freeDataSet(dataset);

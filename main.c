@@ -6,6 +6,7 @@
 #include "SDL/SDL.h"
 #include "SDL/SDL_image.h"
 #include "err.h"
+#include "source/common.h"
 #include "source/GUI/gui.h"
 #include "source/network/network.h"
 #include "source/network/tools.h"
@@ -15,11 +16,6 @@
 #include "source/training/training.h"
 #include "source/ocr/ocr.h"
 
-#define KRED "\x1B[31m"
-#define KGRN "\x1B[32m"
-#define KWHT "\x1B[37m"
-#define UNUSED(x) (void)(x)
-
 /**
  * Implements the XOR neural network demo.
  * Allows training or using a neural network for the XOR operation.
@@ -27,7 +23,7 @@
 void XOR(void)
 {
     // Neural network initialization
-    struct network *network = InitializeNetwork(2, 4, 1, "source/Xor/xorwb.txt");
+    struct network *network = InitializeNetwork(2, 4, 1, XOR_WEIGHTS_PATH);
 
     if (network == NULL)
     {
@@ -66,7 +62,7 @@ void XOR(void)
 
     if (choice == 1) // Train the network
     {
-        result_file = fopen("source/Xor/xordata.txt", "w");
+        result_file = fopen(XOR_DATA_PATH, "w");
         if (result_file == NULL)
         {
             freeNetwork(network);
@@ -111,7 +107,7 @@ void XOR(void)
         printf("\e[?25h"); // Show cursor
 
         // Save trained network weights and biases
-        save_network("source/Xor/xorwb.txt", network);
+        save_network(XOR_WEIGHTS_PATH, network);
         fclose(result_file);
     }
     else if (choice == 2) // Use the network

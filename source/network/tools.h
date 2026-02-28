@@ -8,7 +8,7 @@
 // Training dataset structure for efficient data loading
 typedef struct
 {
-    double **inputs;  // Array of input vectors (each 784 values for 28x28 images)
+    double **inputs;  // Array of input vectors (each IMAGE_PIXELS values for 28x28 images)
     char *labels;     // Array of expected characters
     int count;        // Total number of training samples
     int capacity;     // Allocated capacity (for pre-allocation, internal use)
@@ -17,6 +17,8 @@ typedef struct
 void progressBar(int step, int nb);
 double expo(double x);
 double my_sqrt(double x);
+double my_sin(double x);
+double my_cos(double x);
 double sigmoid(double x);
 double dSigmoid(double x);
 double relu(double x);

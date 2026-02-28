@@ -2,6 +2,7 @@
 #define CNN_H
 
 #include "tools.h"
+#include "../common.h"
 #include <stdlib.h>
 
 #define CONV_SIZE 3
@@ -40,7 +41,7 @@ typedef struct {
     double adam_beta2_t;
 
     // Intermediate states for backprop
-    double input[INPUT_H][INPUT_W];
+    double *image_ptr; // Pointer to original flat input (avoids copy)
     double conv_output[NUM_FILTERS][CONV_H][CONV_W]; // 26x26
     double pool_output[NUM_FILTERS][POOL_H][POOL_W];
     int    pool_mask[NUM_FILTERS][POOL_H][POOL_W];
@@ -51,7 +52,7 @@ CNN* init_cnn();
 void free_cnn(CNN* cnn);
 
 // Forward pass: writes 1352 doubles into out[]. No allocation.
-void cnn_forward(CNN* cnn, double image[784], double *out);
+void cnn_forward(CNN* cnn, double image[IMAGE_PIXELS], double *out);
 
 // Backward pass: Takes gradients coming FROM the dense layer (1352 doubles)
 // Updates CNN weights internally.

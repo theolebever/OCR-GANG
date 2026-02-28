@@ -1,4 +1,5 @@
 #include "process.h"
+#include "../common.h"
 
 #include <err.h>
 
@@ -18,7 +19,7 @@ SDL_Surface *black_and_white(SDL_Surface *image)
 
             /* Grey level and black and white */
             float average = (r + g + b) / 3; // Niveaux de gris
-            Uint8 color = (average >= 180) ? 255 : 0; // Noir ou blanc
+            Uint8 color = (average >= BW_THRESHOLD) ? 255 : 0; // Noir ou blanc
             put_pixel(image, i, j,
                       SDL_MapRGB(image->format, color, color, color));
         }

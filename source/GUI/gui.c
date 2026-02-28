@@ -28,12 +28,12 @@ void save_text(GtkButton *button, GtkTextBuffer *buffer)
     gtk_widget_destroy(dialog);
 }
 
-void load_image(GtkButton *button, GtkImage *image)
+void gui_load_image(GtkButton *button, GtkImage *image)
 {
     if (strcmp(filename, "") == 0)
         return;
     UNUSED(button);
-    SDL_Surface *img = load__image((char *)filename);
+    SDL_Surface *img = load_image((char *)filename);
     if (img->w > 560 && img->h > 560)
     {
         float wi = img->w;
@@ -57,10 +57,6 @@ void load_image(GtkButton *button, GtkImage *image)
         gtk_image_set_from_file(GTK_IMAGE(image), filename);
     }
 }
-// Colors for print
-#define KRED "\x1B[31m"
-#define KGRN "\x1B[32m"
-#define KWHT "\x1B[37m"
 
 void open_image(GtkButton *button, GtkLabel *text_label)
 {

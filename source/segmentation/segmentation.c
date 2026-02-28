@@ -1,4 +1,5 @@
 #include "segmentation.h"
+#include "../common.h"
 
 #include <stdio.h>
 
@@ -9,19 +10,19 @@ void DrawRedLines(SDL_Surface *image)
 {
     Uint32 pixel;
     Uint8 red;
-    char boo; // boo is boolean
+    int is_empty; // is_empty is boolean
     for (int i = 0; i < image->h; i++)
     {
-        boo = 1;
+        is_empty = 1;
         for (int j = 0; j < image->w; j++)
         {
             pixel = get_pixel(image, j, i);
             red = getRed(pixel, image->format);
 
             if (red == 0)
-                boo = 0;
+                is_empty = 0;
         }
-        if (boo)
+        if (is_empty)
         {
             for (int j = 0; j < image->w; j++)
             {
@@ -36,26 +37,26 @@ int CountBlocs(SDL_Surface *image)
     Uint32 pixel;
     Uint8 red;
     int Count = 0; // Count each bloc in image
-    char boo; // boo is boolean
-    int Ymax;
+    int is_empty; // is_empty is boolean
+    int y_max;
     for (int i = 0; i < image->h; i++)
     {
         pixel = get_pixel(image, 0, i);
         red = getRed(pixel, image->format);
         if (red == 0 || red == 255)
         {
-            boo = 1;
-            Ymax = i;
-            while (boo && Ymax < image->h)
+            is_empty = 1;
+            y_max = i;
+            while (is_empty && y_max < image->h)
             {
-                Ymax++;
-                pixel = get_pixel(image, 0, Ymax);
+                y_max++;
+                pixel = get_pixel(image, 0, y_max);
                 red = getRed(pixel, image->format);
                 if (red == 128)
-                    boo = 0;
+                    is_empty = 0;
             }
             Count++;
-            i = Ymax;
+            i = y_max;
         }
     }
     return Count;
@@ -66,8 +67,8 @@ int SizeOfChar(SDL_Surface *bloc)
     Uint32 pixel;
     Uint8 red;
     int charSize = 20;
-    char boo;
-    int charXmax;
+    int is_empty;
+    int charx_max;
     int charXmin;
     for (int i = 0; i < bloc->w; i++)
     {
@@ -75,19 +76,19 @@ int SizeOfChar(SDL_Surface *bloc)
         red = getRed(pixel, bloc->format);
         if (red == 0 || red == 255)
         {
-            boo = 1;
+            is_empty = 1;
             charXmin = i;
-            charXmax = i;
-            while (boo && charXmax < bloc->w)
+            charx_max = i;
+            while (is_empty && charx_max < bloc->w)
             {
-                charXmax++;
-                pixel = get_pixel(bloc, charXmax, 0);
+                charx_max++;
+                pixel = get_pixel(bloc, charx_max, 0);
                 red = getRed(pixel, bloc->format);
                 if (red == 128)
-                    boo = 0;
+                    is_empty = 0;
             }
-            charSize = (charSize + charXmax - charXmin) / 2;
-            i = charXmax;
+            charSize = (charSize + charx_max - charXmin) / 2;
+            i = charx_max;
         }
     }
     return charSize;
@@ -180,18 +181,18 @@ void DrawLinesUp(SDL_Surface *image)
 {
     Uint32 pixel;
     Uint8 red;
-    char boo;
+    int is_empty;
     for (int i = 0; i < image->w; i++)
     {
-        boo = 1;
+        is_empty = 1;
         for (int j = 0; j < image->h; j++)
         {
             pixel = get_pixel(image, i, j);
             red = getRed(pixel, image->format);
             if (red == 0)
-                boo = 0;
+                is_empty = 0;
         }
-        if (boo)
+        if (is_empty)
         {
             for (int j = 0; j < image->h; j++)
             {
@@ -206,8 +207,8 @@ int CountChars(SDL_Surface *bloc)
     Uint32 pixel;
     Uint8 red;
     int Count = 0;
-    char boo;
-    int Xmax;
+    int is_empty;
+    int x_max;
     int spaceSize = (SizeOfChar(bloc) / 4) * 3;
     int currentspaceSize = 0;
     char insertspace = 1;
@@ -220,21 +221,21 @@ int CountChars(SDL_Surface *bloc)
         {
             insertspace = 1;
             currentspaceSize = 0;
-            boo = 1;
-            Xmax = i;
-            while (boo && Xmax < bloc->w)
+            is_empty = 1;
+            x_max = i;
+            while (is_empty && x_max < bloc->w)
             {
-                Xmax++;
-                pixel = get_pixel(bloc, Xmax, 0);
+                x_max++;
+                pixel = get_pixel(bloc, x_max, 0);
                 red = getRed(pixel, bloc->format);
 
                 if (red == 128)
                 {
-                    boo = 0;
+                    is_empty = 0;
                 }
             }
             Count++;
-            i = Xmax;
+            i = x_max;
         }
         if (insertspace && Count != 0 && currentspaceSize == spaceSize)
         {
@@ -315,7 +316,7 @@ int ImageToMatrix(SDL_Surface ***chars,
                 }
             }
 
-            int *resized = Resize1(raw, 28, 28, w, h);
+            int *resized = Resize1(raw, IMAGE_SIZE, IMAGE_SIZE, w, h);
             free(raw);
 
             (*chars_matrix)[index++] = resized;
@@ -328,7 +329,7 @@ int ImageToMatrix(SDL_Surface ***chars,
 void SaveMatrix(int **chars_matrix, char *filename)
 {
     FILE *matrix = fopen(filename, "w");
-    size_t size = 28;
+    size_t size = IMAGE_SIZE;
     for (size_t i = 0; i < size; i++)
     {
         for (size_t j = 0; j < size; j++)
