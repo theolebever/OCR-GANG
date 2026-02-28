@@ -231,7 +231,16 @@ void forward_pass(struct network *net)
             net->output_layer[o] += hid_h * w_row[o];
     }
 
-    softmax(net->output_layer, O);
+    if (O == 1)
+    {
+        // Binary classification (XOR): use sigmoid
+        net->output_layer[0] = sigmoid(net->output_layer[0]);
+    }
+    else
+    {
+        // Multi-class (OCR): use softmax
+        softmax(net->output_layer, O);
+    }
 }
 
 
