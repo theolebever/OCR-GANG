@@ -1,35 +1,72 @@
-# Welcome to OCR-GANG 👋
-![Version](https://img.shields.io/badge/version-2.0-blue.svg?cacheSeconds=2592000)
+# OCR-GANG
 
-> Create a OCR in C language for EPITA
+OCR-GANG is an OCR project written in C for EPITA.
 
-## Prérequis
-* SDL_Image (libsdl-image1.2-dev)
-* GTK+ 3.0 (libgtk-3-dev)
+## Prerequisites
 
-## Installation
+- `gcc`
+- `make`
+- `pkg-config`
+- SDL 1.2 image development package, for example `libsdl-image1.2-dev`
+- GTK+ 3 development package, for example `libgtk-3-dev`
+
+The Makefile uses Unix shell command substitution for `pkg-config`, so build it from a Unix-like shell. On Windows/WSL, this works:
 
 ```sh
-Démarrer une console dans le répertoire du projet puis lancer la commande make.
-Lancer le programme avec la commande ./main
+bash -lc "make"
 ```
+
+## Build
+
+From the project root:
+
+```sh
+make
+```
+
+This builds the `main` executable and creates the weight/data directories if they do not exist.
 
 ## Usage
 
 ```sh
------------------------
-Bienvenue dans OCR GANG
------------------------
-Arguments :
-    (Aucun) Lance l'interface utilisateur (GUI)
-    --help  Montre ce message
-    --seg   Montre la segmentation (spécifiez un image path)
-    --train Lance l'entrainement du réseau de neurones
-    --OCR   Lance l'OCR (spécifiez un image path)
-    --XOR   Montre la fonction XOR
+./main
 ```
+
+Launches the GUI.
+
+```sh
+./main --train
+```
+
+Trains the OCR model. Training images are loaded from:
+
+```text
+img/training/maj
+img/training/min
+```
+
+The trained weights are saved to:
+
+```text
+source/OCR-data/ocrwb.txt
+source/OCR-data/cnnwb.txt
+```
+
+```sh
+./main --OCR <image_path>
+```
+
+Runs OCR on the given image.
+
+```sh
+./main --XOR
+```
+
+Runs the XOR neural-network demo.
 
 ## Authors
 
-👤 **Marius ANDRE ** 👤 **Pierre MEGALLI ** 👤 **Théo LE BEVER ** 👤 **Maxence DE TORQUAT DE LA COULERIE **
-
+- Marius ANDRE
+- Pierre MEGALLI
+- Theo LE BEVER
+- Maxence DE TORQUAT DE LA COULERIE
