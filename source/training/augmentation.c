@@ -7,8 +7,55 @@
 
 
 
+static int rotation_maps_ready = 0;
+static int rotation_maps[41][IMAGE_PIXELS];
+
+static void init_rotation_maps(void)
+{
+    if (rotation_maps_ready)
+        return;
+
+    const double cx = 13.5;
+    const double cy = 13.5;
+
+    for (int angle = -20; angle <= 20; angle++)
+    {
+        double rads = angle * MY_PI / 180.0;
+        double cos_a = my_cos(rads);
+        double sin_a = my_sin(rads);
+        int *map = rotation_maps[angle + 20];
+
+        for (int y = 0; y < IMAGE_SIZE; y++)
+        {
+            for (int x = 0; x < IMAGE_SIZE; x++)
+            {
+                double src_x = (x - cx) * cos_a + (y - cy) * sin_a + cx;
+                double src_y = -(x - cx) * sin_a + (y - cy) * cos_a + cy;
+                int nx = (int)(0.5 + src_x);
+                int ny = (int)(0.5 + src_y);
+                map[y * IMAGE_SIZE + x] =
+                    (nx >= 0 && nx < IMAGE_SIZE && ny >= 0 && ny < IMAGE_SIZE)
+                        ? ny * IMAGE_SIZE + nx
+                        : -1;
+            }
+        }
+    }
+
+    rotation_maps_ready = 1;
+}
+
 // Rotate a 28x28 image by `angle` degrees into caller-supplied `output`
 void rotate_matrix(double *input, double angle, double *output) {
+    int angle_i = (int)angle;
+    if ((double)angle_i == angle && angle_i >= -20 && angle_i <= 20)
+    {
+        init_rotation_maps();
+        int *map = rotation_maps[angle_i + 20];
+        for (int i = 0; i < IMAGE_PIXELS; i++)
+            output[i] = map[i] >= 0 ? input[map[i]] : 0.0;
+        return;
+    }
+
     double rads = angle * MY_PI / 180.0;
     double cx = 13.5;
     double cy = 13.5;
@@ -29,13 +76,23 @@ void rotate_matrix(double *input, double angle, double *output) {
 
 // Shift image by dx, dy into caller-supplied `output`
 void shift_matrix(double *input, int dx, int dy, double *output) {
-    for (int y = 0; y < IMAGE_SIZE; y++) {
-        for (int x = 0; x < IMAGE_SIZE; x++) {
-            int src_x = x - dx;
-            int src_y = y - dy;
-            output[y * IMAGE_SIZE + x] = (src_x >= 0 && src_x < IMAGE_SIZE && src_y >= 0 && src_y < IMAGE_SIZE)
-                                  ? input[src_y * IMAGE_SIZE + src_x] : 0.0;
-        }
+    memset(output, 0, IMAGE_PIXELS * sizeof(double));
+
+    int src_x0 = dx > 0 ? 0 : -dx;
+    int dst_x0 = dx > 0 ? dx : 0;
+    int copy_w = IMAGE_SIZE - (dx > 0 ? dx : -dx);
+
+    int src_y0 = dy > 0 ? 0 : -dy;
+    int dst_y0 = dy > 0 ? dy : 0;
+    int copy_h = IMAGE_SIZE - (dy > 0 ? dy : -dy);
+
+    if (copy_w <= 0 || copy_h <= 0)
+        return;
+
+    for (int row = 0; row < copy_h; row++) {
+        memcpy(output + (dst_y0 + row) * IMAGE_SIZE + dst_x0,
+               input + (src_y0 + row) * IMAGE_SIZE + src_x0,
+               (size_t)copy_w * sizeof(double));
     }
 }
 

@@ -123,7 +123,7 @@ static int argmax_output(struct network *net)
 
 static int predict_label(CNN *cnn, struct network *net, double *input)
 {
-    cnn_forward(cnn, input, net->input_layer);
+    cnn_forward_infer(cnn, input, net->input_layer);
     forward_pass(net);
     return argmax_output(net);
 }

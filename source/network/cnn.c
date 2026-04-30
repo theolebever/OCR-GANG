@@ -98,6 +98,48 @@ void cnn_forward(CNN* cnn, double image[IMAGE_PIXELS], double *out) {
     }
 }
 
+static inline double conv_relu_at(const double *image, double filter[CONV_SIZE][CONV_SIZE],
+                                  double bias, int y, int x)
+{
+    double sum = bias
+        + image[y * INPUT_W + x] * filter[0][0]
+        + image[y * INPUT_W + x + 1] * filter[0][1]
+        + image[y * INPUT_W + x + 2] * filter[0][2]
+        + image[(y + 1) * INPUT_W + x] * filter[1][0]
+        + image[(y + 1) * INPUT_W + x + 1] * filter[1][1]
+        + image[(y + 1) * INPUT_W + x + 2] * filter[1][2]
+        + image[(y + 2) * INPUT_W + x] * filter[2][0]
+        + image[(y + 2) * INPUT_W + x + 1] * filter[2][1]
+        + image[(y + 2) * INPUT_W + x + 2] * filter[2][2];
+
+    return sum > 0.0 ? sum : 0.0;
+}
+
+void cnn_forward_infer(CNN* cnn, const double image[IMAGE_PIXELS], double *out) {
+    int idx = 0;
+
+    for (int f = 0; f < NUM_FILTERS; f++) {
+        double (*filter)[CONV_SIZE] = cnn->filters[f];
+        double bias = cnn->biases[f];
+
+        for (int y = 0; y < POOL_H; y++) {
+            int sy = y * POOL_SIZE;
+            for (int x = 0; x < POOL_W; x++) {
+                int sx = x * POOL_SIZE;
+                double max_val = conv_relu_at(image, filter, bias, sy, sx);
+                double v = conv_relu_at(image, filter, bias, sy, sx + 1);
+                if (v > max_val) max_val = v;
+                v = conv_relu_at(image, filter, bias, sy + 1, sx);
+                if (v > max_val) max_val = v;
+                v = conv_relu_at(image, filter, bias, sy + 1, sx + 1);
+                if (v > max_val) max_val = v;
+
+                out[idx++] = max_val;
+            }
+        }
+    }
+}
+
 void cnn_backward(CNN* cnn, double* output_gradients, double eta) {
     // Advance Adam timestep
     cnn->adam_t += 1;

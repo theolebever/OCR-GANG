@@ -264,13 +264,15 @@ int *Resize1(int *mat, int fx, int fy, int sx, int sy)
     if (!res)
         errx(1, "OOM Resize1");
 
-    double cx = (double)sx / fx;
-    double cy = (double)sy / fy;
-
     for (int y = 0; y < fy; y++)
+    {
+        int src_y = y * sy / fy;
         for (int x = 0; x < fx; x++)
-            res[y * fx + x] =
-                mat[(int)(y * cy) * sx + (int)(x * cx)];
+        {
+            int src_x = x * sx / fx;
+            res[y * fx + x] = mat[src_y * sx + src_x];
+        }
+    }
 
     return res;
 }
@@ -306,11 +308,6 @@ int ImageToMatrix(SDL_Surface ***chars,
             int w = s->w;
             int h = s->h;
 
-            // Binarize whole surface into raw[]
-            int *raw = malloc(sizeof(int) * w * h);
-            if (!raw)
-                errx(1, "OOM raw");
-
             int min_x = w, max_x = -1, min_y = h, max_y = -1;
             for (int y = 0; y < h; y++)
             {
@@ -319,9 +316,8 @@ int ImageToMatrix(SDL_Surface ***chars,
                     Uint32 px = get_pixel(s, x, y);
                     Uint8 r, g, b;
                     SDL_GetRGB(px, s->format, &r, &g, &b);
-                    int v = (r < BW_THRESHOLD) ? 1 : 0;
-                    raw[y * w + x] = v;
-                    if (v)
+                    (void)g; (void)b;
+                    if (r < BW_THRESHOLD)
                     {
                         if (x < min_x) min_x = x;
                         if (x > max_x) max_x = x;
@@ -334,7 +330,6 @@ int ImageToMatrix(SDL_Surface ***chars,
             // Empty crop (no foreground) — treat as space
             if (max_x < 0)
             {
-                free(raw);
                 (*chars_matrix)[index++] = NULL;
                 continue;
             }
@@ -353,10 +348,17 @@ int ImageToMatrix(SDL_Surface ***chars,
                 errx(1, "OOM padded");
 
             for (int y = 0; y < bh; y++)
+            {
                 for (int x = 0; x < bw; x++)
+                {
+                    Uint32 px = get_pixel(s, x + min_x, y + min_y);
+                    Uint8 r, g, b;
+                    SDL_GetRGB(px, s->format, &r, &g, &b);
+                    (void)g; (void)b;
                     padded[(y + off_y) * size + (x + off_x)] =
-                        raw[(y + min_y) * w + (x + min_x)];
-            free(raw);
+                        (r < BW_THRESHOLD) ? 1 : 0;
+                }
+            }
 
             int *resized = Resize1(padded, IMAGE_SIZE, IMAGE_SIZE, size, size);
             free(padded);

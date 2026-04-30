@@ -79,7 +79,7 @@ static char recognize_matrix(CNN *cnn, struct network *network, int *matrix)
     for (int i = 0; i < IMAGE_PIXELS; i++)
         input[i] = (double)matrix[i];
 
-    cnn_forward(cnn, input, network->input_layer);
+    cnn_forward_infer(cnn, input, network->input_layer);
     forward_pass(network);
     return RetrieveChar(IndexAnswer(network));
 }

@@ -457,13 +457,6 @@ double *resize_image_to_28x28(SDL_Surface *img)
 
     int w = img->w;
     int h = img->h;
-    int *raw = malloc(sizeof(int) * w * h);
-    if (raw == NULL)
-    {
-        free(input);
-        return NULL;
-    }
-
     int min_x = w, max_x = -1, min_y = h, max_y = -1;
     for (int y = 0; y < h; y++)
     {
@@ -473,9 +466,7 @@ double *resize_image_to_28x28(SDL_Surface *img)
             Uint8 r, g, b;
             SDL_GetRGB(pixel, img->format, &r, &g, &b);
             (void)g; (void)b;
-            int v = (r < BW_THRESHOLD) ? 1 : 0;
-            raw[y * w + x] = v;
-            if (v)
+            if (r < BW_THRESHOLD)
             {
                 if (x < min_x) min_x = x;
                 if (x > max_x) max_x = x;
@@ -487,7 +478,6 @@ double *resize_image_to_28x28(SDL_Surface *img)
 
     if (max_x < 0)
     {
-        free(raw);
         return input;
     }
 
@@ -500,16 +490,21 @@ double *resize_image_to_28x28(SDL_Surface *img)
     int *padded = calloc(size * size, sizeof(int));
     if (padded == NULL)
     {
-        free(raw);
         free(input);
         return NULL;
     }
 
     for (int y = 0; y < bh; y++)
+    {
         for (int x = 0; x < bw; x++)
-            padded[(y + off_y) * size + (x + off_x)] =
-                raw[(y + min_y) * w + (x + min_x)];
-    free(raw);
+        {
+            Uint32 pixel = get_pixel(img, x + min_x, y + min_y);
+            Uint8 r, g, b;
+            SDL_GetRGB(pixel, img->format, &r, &g, &b);
+            (void)g; (void)b;
+            padded[(y + off_y) * size + (x + off_x)] = (r < BW_THRESHOLD) ? 1 : 0;
+        }
+    }
 
     int *resized = Resize1(padded, IMAGE_SIZE, IMAGE_SIZE, size, size);
     free(padded);

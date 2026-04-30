@@ -56,6 +56,10 @@ void cnn_reset(CNN* cnn);
 // Forward pass: writes 1352 doubles into out[]. No allocation.
 void cnn_forward(CNN* cnn, double image[IMAGE_PIXELS], double *out);
 
+// Inference-only forward pass. Produces the same flattened output as
+// cnn_forward(), but does not preserve intermediate state for backprop.
+void cnn_forward_infer(CNN* cnn, const double image[IMAGE_PIXELS], double *out);
+
 // Backward pass: Takes gradients coming FROM the dense layer (1352 doubles)
 // Updates CNN weights internally.
 void cnn_backward(CNN* cnn, double* output_gradients, double eta);
