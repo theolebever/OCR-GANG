@@ -99,17 +99,17 @@ int augment_dataset(TrainingDataSet *dataset, int multiplier) {
             int op = rand() % 4;
 
             if (op == 0) {
-                double angle = (rand() % 31) - 15;
+                double angle = (rand() % 41) - 20;  // -20 to +20 degrees
                 rotate_matrix(original_img, angle, scratch);
             } else if (op == 1) {
-                int dx = (rand() % 5) - 2;
-                int dy = (rand() % 5) - 2;
+                int dx = (rand() % 7) - 3;  // -3 to +3 pixels
+                int dy = (rand() % 7) - 3;
                 shift_matrix(original_img, dx, dy, scratch);
             } else if (op == 2) {
-                double noise_level = 0.01 + ((double)rand() / RAND_MAX) * 0.04;
+                double noise_level = 0.02 + ((double)rand() / RAND_MAX) * 0.08;  // 2-10%
                 add_noise(original_img, noise_level, scratch);
             } else {
-                double scale = 0.8 + ((double)rand() / RAND_MAX) * 0.4;
+                double scale = 0.75 + ((double)rand() / RAND_MAX) * 0.5;  // 0.75-1.25
                 scale_matrix(original_img, scale, scratch);
             }
 

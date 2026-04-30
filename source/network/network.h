@@ -44,6 +44,9 @@ struct network
     double adam_beta2_t; // ADAM_BETA2^t (running product for bias correction)
 
     double *goal;
+    double *dropout_mask; // Dropout mask for hidden layer
+    double dropout_rate;  // Dropout probability (0.0 = no dropout)
+    int is_training;      // Flag to enable/disable dropout
 };
 
 struct network *InitializeNetwork(double i, double h, double o, char *filepath);
@@ -60,6 +63,8 @@ int InputImage(struct network *net, size_t index, int ***chars_matrix);
 
 void freeNetwork(struct network *net);
 
-#define OCR_HIDDEN_NODES 128
+void set_training_mode(struct network *net, int is_training);
+
+#define OCR_HIDDEN_NODES 64
 
 #endif

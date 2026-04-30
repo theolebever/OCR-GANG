@@ -140,9 +140,17 @@ int *DivideIntoBlocs(SDL_Surface *image,
             for (int x = 0; x < blocs[Count]->w && c < nb_chars; x++)
             {
                 pixel = get_pixel(blocs[Count], x, 0);
-                red = getRed(pixel, blocs[Count]->format);
+                Uint8 pr, pg, pb;
+                SDL_GetRGB(pixel, blocs[Count]->format, &pr, &pg, &pb);
 
-                if (red == 0 || red == 255)
+                // Yellow marker (128,128,0) — space inserted by CountChars
+                if (pr == 128 && pg == 128)
+                {
+                    chars[Count][c++] = NULL;
+                    continue;
+                }
+
+                if (pr == 0 || pr == 255)
                 {
                     int x_start = x;
                     while (x < blocs[Count]->w)
@@ -274,12 +282,8 @@ int ImageToMatrix(SDL_Surface ***chars,
                   int BlocNumber)
 {
     int total = 0;
-
-    /* Comptage réel des surfaces valides */
     for (int b = 0; b < BlocNumber; b++)
-        for (int c = 0; c < len[b]; c++)
-            if (chars[b][c])
-                total++;
+        total += len[b];
 
     *chars_matrix = malloc(sizeof(int *) * total);
     if (!*chars_matrix)
@@ -292,19 +296,22 @@ int ImageToMatrix(SDL_Surface ***chars,
         for (int c = 0; c < len[b]; c++)
         {
             SDL_Surface *s = chars[b][c];
-            if (!s)
-                continue; // ← ESPACE, on ignore
+            // NULL surface = space; keep the slot so bloc positions stay aligned
+            if (!s || s->w <= 0 || s->h <= 0)
+            {
+                (*chars_matrix)[index++] = NULL;
+                continue;
+            }
 
             int w = s->w;
             int h = s->h;
 
-            if (w <= 0 || h <= 0)
-                continue;
-
+            // Binarize whole surface into raw[]
             int *raw = malloc(sizeof(int) * w * h);
             if (!raw)
                 errx(1, "OOM raw");
 
+            int min_x = w, max_x = -1, min_y = h, max_y = -1;
             for (int y = 0; y < h; y++)
             {
                 for (int x = 0; x < w; x++)
@@ -312,12 +319,47 @@ int ImageToMatrix(SDL_Surface ***chars,
                     Uint32 px = get_pixel(s, x, y);
                     Uint8 r, g, b;
                     SDL_GetRGB(px, s->format, &r, &g, &b);
-                    raw[y * w + x] = (r < 128) ? 1 : 0;
+                    int v = (r < BW_THRESHOLD) ? 1 : 0;
+                    raw[y * w + x] = v;
+                    if (v)
+                    {
+                        if (x < min_x) min_x = x;
+                        if (x > max_x) max_x = x;
+                        if (y < min_y) min_y = y;
+                        if (y > max_y) max_y = y;
+                    }
                 }
             }
 
-            int *resized = Resize1(raw, IMAGE_SIZE, IMAGE_SIZE, w, h);
+            // Empty crop (no foreground) — treat as space
+            if (max_x < 0)
+            {
+                free(raw);
+                (*chars_matrix)[index++] = NULL;
+                continue;
+            }
+
+            int bw = max_x - min_x + 1;
+            int bh = max_y - min_y + 1;
+
+            // Square-pad the tight bounding box so the letter fills the frame,
+            // matching training occupancy regardless of upstream crop padding.
+            int size = bw > bh ? bw : bh;
+            int off_x = size / 2 - bw / 2;
+            int off_y = size / 2 - bh / 2;
+
+            int *padded = calloc(size * size, sizeof(int));
+            if (!padded)
+                errx(1, "OOM padded");
+
+            for (int y = 0; y < bh; y++)
+                for (int x = 0; x < bw; x++)
+                    padded[(y + off_y) * size + (x + off_x)] =
+                        raw[(y + min_y) * w + (x + min_x)];
             free(raw);
+
+            int *resized = Resize1(padded, IMAGE_SIZE, IMAGE_SIZE, size, size);
+            free(padded);
 
             (*chars_matrix)[index++] = resized;
         }

@@ -4,83 +4,97 @@
 #include "../training/training.h"
 #include "../ocr/ocr.h"
 
-gchar *filename = "";
-char *text = NULL;
-GtkWidget *parent;
+// GUI-owned state: kept file-scoped so other modules don't reach in via `extern`.
+static gchar *filename = NULL;  // owned: free with g_free before replacing
+static char  *text     = NULL;  // owned: free before replacing
+static GtkWidget *parent;
 
 void save_text(GtkButton *button, GtkTextBuffer *buffer)
 {
-    UNUSED(button);
     UNUSED(buffer);
-    GtkWidget *dialog;
     GtkWidget *toplevel = gtk_widget_get_toplevel(GTK_WIDGET(button));
-    dialog = gtk_file_chooser_dialog_new(
+    GtkWidget *dialog = gtk_file_chooser_dialog_new(
         "Save Text ", GTK_WINDOW(toplevel), GTK_FILE_CHOOSER_ACTION_SAVE,
         "Cancel", GTK_RESPONSE_CANCEL, "Save", GTK_RESPONSE_ACCEPT, NULL);
     if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT)
     {
-        char *filename;
-        filename = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog));
-        /* set the contents of the file to the text from the buffer */
-        if (filename != NULL)
-            g_file_set_contents(filename, text ? text : "", text ? strlen(text) : 0, NULL);
+        gchar *save_path = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog));
+        if (save_path != NULL)
+        {
+            g_file_set_contents(save_path,
+                                text ? text : "",
+                                text ? strlen(text) : 0,
+                                NULL);
+            g_free(save_path);
+        }
     }
     gtk_widget_destroy(dialog);
 }
 
 void gui_load_image(GtkButton *button, GtkImage *image)
 {
-    if (strcmp(filename, "") == 0)
-        return;
     UNUSED(button);
-    SDL_Surface *img = load_image((char *)filename);
-    if (img->w > 560 && img->h > 560)
+    if (filename == NULL || filename[0] == '\0')
+        return;
+
+    SDL_Surface *img = load_image(filename);
+    if (img->w > 560 || img->h > 560)
     {
-        float wi = img->w;
-        float hi = img->h;
-        float max_h = 560.;
-        float max_w = 560.;
-        float best;
-        if (max_w / wi < max_h / hi)
-            best = max_w / wi;
-        else
-            best = max_h / hi;
-        int new_w = wi * best;
-        int new_h = hi * best;
-        // printf("%d %d",new_w,new_h);
-        SDL_Surface *new = resize(img, new_w, new_h);
-        SDL_SaveBMP(new, "image_resize.bmp");
-        gtk_image_set_from_file(GTK_IMAGE(image), "image_resize.bmp");
+        float wi = img->w, hi = img->h;
+        float best = (560.0f / wi < 560.0f / hi) ? 560.0f / wi : 560.0f / hi;
+        SDL_Surface *scaled = resize(img, (int)(wi * best), (int)(hi * best));
+        SDL_SaveBMP(scaled, "image_resize.bmp");
+        SDL_FreeSurface(scaled);
+        gtk_image_set_from_file(image, "image_resize.bmp");
     }
     else
     {
-        gtk_image_set_from_file(GTK_IMAGE(image), filename);
+        gtk_image_set_from_file(image, filename);
     }
+    SDL_FreeSurface(img);
 }
 
 void open_image(GtkButton *button, GtkLabel *text_label)
 {
-    GtkWidget *label = (GtkWidget *)text_label;
     GtkWidget *toplevel = gtk_widget_get_toplevel(GTK_WIDGET(button));
-    // GtkFileFilter *filter = gtk_file_filter_new ();
     GtkWidget *dialog = gtk_file_chooser_dialog_new(
-        ("Open image"), GTK_WINDOW(toplevel), GTK_FILE_CHOOSER_ACTION_OPEN,
+        "Open image", GTK_WINDOW(toplevel), GTK_FILE_CHOOSER_ACTION_OPEN,
         "Open", GTK_RESPONSE_ACCEPT, "Cancel", GTK_RESPONSE_CANCEL, NULL);
 
-    // gtk_file_filter_add_pixbuf_formats (filter);
-    // gtk_file_chooser_add_filter (GTK_FILE_CHOOSER (dialog),filter);
-
-    switch (gtk_dialog_run(GTK_DIALOG(dialog)))
+    if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT)
     {
-    case GTK_RESPONSE_ACCEPT: {
+        g_free(filename);
         filename = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog));
-        gtk_label_set_text(GTK_LABEL(label), filename);
-        break;
-    }
-    default:
-        break;
+        if (filename != NULL)
+            gtk_label_set_text(text_label, filename);
     }
     gtk_widget_destroy(dialog);
+}
+
+int OCR(GtkButton *button, GtkTextBuffer *buffer)
+{
+    UNUSED(button);
+
+    if (filename == NULL || filename[0] == '\0')
+    {
+        g_print("No file selected!\n");
+        return EXIT_FAILURE;
+    }
+
+    char *result = PerformOCR(filename);
+    if (result == NULL)
+    {
+        g_print("OCR Failed!\n");
+        return EXIT_FAILURE;
+    }
+
+    g_print("OCR Done !\nResult: %s\n", result);
+
+    free(text);
+    text = result;  // transfers ownership
+    gtk_text_buffer_set_text(buffer, text, strlen(text));
+
+    return EXIT_SUCCESS;
 }
 
 int TrainNeuralNetwork()

@@ -17,6 +17,7 @@ typedef struct
 void progressBar(int step, int nb);
 double expo(double x);
 double my_sqrt(double x);
+double my_log(double x);
 double my_sin(double x);
 double my_cos(double x);
 double sigmoid(double x);
@@ -31,13 +32,15 @@ double init_weight_xavier(int fan_in, int fan_out);
 int cfileexists(const char *filename);
 int fileempty(const char *filename);
 void save_network(const char *filename, struct network *network);
-void load_network(const char *filename, struct network *network);
+// Returns 1 on full success, 0 if the file is missing/incompatible/truncated.
+int  load_network(const char *filename, struct network *network);
 // CNN save/load — uses void* to avoid circular include with cnn.h
 void save_cnn(const char *filename, void *cnn);
-void load_cnn(const char *filename, void *cnn);
+int  load_cnn(const char *filename, void *cnn);
 void shuffle(int *array, size_t n);
 size_t IndexAnswer(struct network *net);
 char RetrieveChar(size_t val);
+int LabelIndex(char c);
 size_t ExpectedPos(char c);
 void ExpectedOutput(struct network *network, char c);
 char *updatepath(char *filepath, size_t len, char c, size_t index);

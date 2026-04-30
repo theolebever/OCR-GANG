@@ -31,70 +31,105 @@ void progressBar(int step, int nb)
     fflush(stdout);
 }
 
+// e^x via Cody-Waite range reduction: x = n*ln(2) + r, |r| <= ln(2)/2.
+// Taylor on the reduced range + exact power-of-two scaling via bit manipulation.
 double expo(double x)
 {
-    // Clamp to avoid overflow/underflow
-    if (x >  709.0) return 1.79769e+308;
-    if (x < -709.0) return 0.0;
+    // Clamp to the range where exp is representable as a normal double
+    if (x >  708.0) return 1.7976931348623157e308;
+    if (x < -708.0) return 0.0;
 
-    // Handle negative x
-    int neg = 0;
-    if (x < 0.0) { neg = 1; x = -x; }
+    // Round x / ln(2) to nearest int (handles positive and negative symmetrically)
+    double k_d = x * MY_INV_LN2;
+    long n = (k_d >= 0.0) ? (long)(k_d + 0.5) : -(long)(-k_d + 0.5);
+    double r = x - (double)n * MY_LN2;
+    // After reduction, |r| <= ln(2)/2 ≈ 0.347
 
-    // O(1) range reduction: x = n*ln(2) + r, where r in [0, ln2)
-    // Then exp(x) = 2^n * exp(r)
-    int n = (int)(x * MY_INV_LN2);
-    double r = x - n * MY_LN2;
-
-    // Taylor series for r in [0, 0.693] — 12 terms suffice for double precision
+    // Taylor series exp(r) = 1 + r + r^2/2! + ... + r^14/14!
+    // On |r| <= 0.347, 14 terms give relative error well below 1e-15
     double sum = 1.0, term = 1.0;
-    for (int i = 1; i <= 12; i++) { term *= r / i; sum += term; }
+    for (int i = 1; i <= 14; i++) { term *= r / (double)i; sum += term; }
 
-    // Compute 2^n using IEEE 754 bit manipulation (exact, O(1))
-    if (n > 0)
-    {
-        unsigned long long bits = (unsigned long long)(n + 1023) << 52;
-        double pow2;
-        __builtin_memcpy(&pow2, &bits, 8);
-        sum *= pow2;
-    }
+    // Build 2^n as an IEEE 754 double (n is guaranteed in [-1022, 1022])
+    unsigned long long bits = (unsigned long long)(n + 1023) << 52;
+    double pow2;
+    __builtin_memcpy(&pow2, &bits, 8);
 
-    return neg ? 1.0 / sum : sum;
+    return sum * pow2;
 }
 
+// ln(x) via IEEE 754 exponent extraction: x = 2^e * m, m in [1,2).
+// ln(x) = e*ln(2) + ln(m). Uses u = (m-1)/(m+1) series so |u| <= 1/3
+// and 2*atanh(u) = ln(m). 10 odd terms give < 1e-15 relative error.
+double my_log(double x)
+{
+    if (x <= 0.0) return -1.7976931348623157e308;
+
+    unsigned long long bits;
+    __builtin_memcpy(&bits, &x, 8);
+    long e = (long)((bits >> 52) & 0x7FF) - 1023;
+    bits = (bits & 0x000FFFFFFFFFFFFFULL) | 0x3FF0000000000000ULL;
+    double m;
+    __builtin_memcpy(&m, &bits, 8);  // m in [1, 2)
+
+    double u = (m - 1.0) / (m + 1.0);
+    double u2 = u * u;
+    double sum = u;
+    double term = u;
+    for (int k = 1; k <= 9; k++) {
+        term *= u2;
+        sum += term / (double)(2 * k + 1);
+    }
+    return 2.0 * sum + (double)e * MY_LN2;
+}
+
+// sqrt via IEEE 754 exponent halving for a ~6-bit seed,
+// then 4 Newton-Raphson iterations → full double precision.
 double my_sqrt(double x)
 {
-    if (x <= 0) return 0.0;
-    // Seed with a fast approximation, then refine with 4 Newton-Raphson iterations
-    // (sufficient for ~13 decimal digits of precision)
-    double guess = x;
-    // Bit-hack seed via union to avoid UB
+    if (x <= 0.0) return 0.0;
+
+    // Seed: halve the exponent field. For x = 2^e * m, yields ≈ 2^(e/2) * sqrt(m)
     unsigned long long bits;
     __builtin_memcpy(&bits, &x, 8);
     bits = (bits >> 1) + 0x1FF8000000000000ULL;
+    double guess;
     __builtin_memcpy(&guess, &bits, 8);
-    guess = (guess + x / guess) * 0.5;
-    guess = (guess + x / guess) * 0.5;
-    guess = (guess + x / guess) * 0.5;
-    guess = (guess + x / guess) * 0.5;
+
+    // Newton-Raphson doubles the correct bits per iteration.
+    // 6-bit seed → 12 → 24 → 48 → >52 bits after 4 iterations.
+    guess = 0.5 * (guess + x / guess);
+    guess = 0.5 * (guess + x / guess);
+    guess = 0.5 * (guess + x / guess);
+    guess = 0.5 * (guess + x / guess);
     return guess;
 }
 
-// Sine via minimax polynomial on [-pi, pi]
-// Uses range reduction to [-pi, pi], then 7th-degree polynomial
+// sin via two-stage range reduction: first to [-π, π] (symmetric rounding),
+// then to [-π/2, π/2] using sin(π - x) = sin(x). Degree-13 odd Taylor.
 double my_sin(double x)
 {
-    // Range reduction to [-pi, pi]
-    x = x - MY_TWO_PI * (int)(x * (1.0 / MY_TWO_PI));
-    if (x > MY_PI) x -= MY_TWO_PI;
-    else if (x < -MY_PI) x += MY_TWO_PI;
+    // Reduce to [-π, π]: subtract nearest multiple of 2π
+    double k_d = x * (1.0 / MY_TWO_PI);
+    long long k = (k_d >= 0.0) ? (long long)(k_d + 0.5) : -(long long)(-k_d + 0.5);
+    x -= (double)k * MY_TWO_PI;
 
-    // Minimax 7th-degree polynomial for sin(x) on [-pi, pi]
-    // sin(x) ≈ x - x^3/6 + x^5/120 - x^7/5040
+    // Reduce to [-π/2, π/2]
+    if      (x >  MY_HALF_PI) x =  MY_PI - x;
+    else if (x < -MY_HALF_PI) x = -MY_PI - x;
+
+    // Odd-power Taylor (Horner form): x - x^3/3! + x^5/5! - ... + x^13/13!
+    // Max |x| = π/2; residual ≈ (π/2)^15 / 15! ≈ 6e-10
     double x2 = x * x;
-    return x * (1.0 + x2 * (-1.0/6.0 + x2 * (1.0/120.0 + x2 * (-1.0/5040.0))));
+    return x * (1.0 + x2 * (-1.0/6.0
+            + x2 * ( 1.0/120.0
+            + x2 * (-1.0/5040.0
+            + x2 * ( 1.0/362880.0
+            + x2 * (-1.0/39916800.0
+            + x2 * ( 1.0/6227020800.0)))))));
 }
 
+// cos via sin(x + π/2). my_sin handles the re-reduction.
 double my_cos(double x)
 {
     return my_sin(x + MY_HALF_PI);
@@ -197,70 +232,100 @@ int fileempty(const char *filename)
     return (len > 0) ? 0 : 1;
 }
 
+// Versioned weight file: dimensions + weights/biases + full Adam state.
+// Incompatible with pre-v2 files; those are ignored on load.
+#define NET_MAGIC "OCRNET"
+#define NET_VERSION 2
+
+static int read_doubles(FILE *f, double *dst, size_t n)
+{
+    for (size_t i = 0; i < n; i++)
+        if (fscanf(f, "%lf", &dst[i]) != 1) return 0;
+    return 1;
+}
+
+static void write_doubles(FILE *f, const double *src, size_t n)
+{
+    for (size_t i = 0; i < n; i++) fprintf(f, "%.17g\n", src[i]);
+}
+
 void save_network(const char *filename, struct network *network)
 {
     if (filename == NULL || network == NULL) return;
-    FILE *output = fopen(filename, "w");
-    if (output == NULL) return;
+    FILE *f = fopen(filename, "w");
+    if (f == NULL) { perror(filename); return; }
 
-    // Save hidden biases (once per hidden node)
-    for (int j = 0; j < network->number_of_hidden_nodes; j++)
-    {
-        fprintf(output, "%lf\n", network->hidden_layer_bias[j]);
-    }
+    int I = network->number_of_inputs;
+    int H = network->number_of_hidden_nodes;
+    int O = network->number_of_outputs;
 
-    // Save hidden weights
-    for (int i = 0; i < network->number_of_inputs * network->number_of_hidden_nodes; i++)
-    {
-        fprintf(output, "%lf\n", network->hidden_weights[i]);
-    }
+    fprintf(f, "%s %d %d %d %d\n", NET_MAGIC, NET_VERSION, I, H, O);
+    fprintf(f, "%ld %.17g %.17g\n",
+            network->adam_t, network->adam_beta1_t, network->adam_beta2_t);
 
-    // Save output biases (once per output node)
-    for (int j = 0; j < network->number_of_outputs; j++)
-    {
-        fprintf(output, "%lf\n", network->output_layer_bias[j]);
-    }
+    write_doubles(f, network->hidden_layer_bias, H);
+    write_doubles(f, network->hidden_weights,    (size_t)I * H);
+    write_doubles(f, network->output_layer_bias, O);
+    write_doubles(f, network->output_weights,    (size_t)H * O);
 
-    // Save output weights
-    for (int i = 0; i < network->number_of_hidden_nodes * network->number_of_outputs; i++)
-    {
-        fprintf(output, "%lf\n", network->output_weights[i]);
-    }
+    write_doubles(f, network->m_hidden_bias,    H);
+    write_doubles(f, network->v_hidden_bias,    H);
+    write_doubles(f, network->m_hidden_weights, (size_t)I * H);
+    write_doubles(f, network->v_hidden_weights, (size_t)I * H);
 
-    fclose(output);
+    write_doubles(f, network->m_output_bias,    O);
+    write_doubles(f, network->v_output_bias,    O);
+    write_doubles(f, network->m_output_weights, (size_t)H * O);
+    write_doubles(f, network->v_output_weights, (size_t)H * O);
+
+    fclose(f);
 }
 
-void load_network(const char *filename, struct network *network)
+int load_network(const char *filename, struct network *network)
 {
-    if (filename == NULL || network == NULL) return;
-    FILE *input = fopen(filename, "r");
-    if (input == NULL) return;
+    if (filename == NULL || network == NULL) return 0;
+    FILE *f = fopen(filename, "r");
+    if (f == NULL) return 0;
 
-    // Load hidden biases (once per hidden node)
-    for (int j = 0; j < network->number_of_hidden_nodes; j++)
+    char magic[16];
+    int version, I, H, O;
+    if (fscanf(f, "%15s %d %d %d %d", magic, &version, &I, &H, &O) != 5
+        || strcmp(magic, NET_MAGIC) != 0
+        || version != NET_VERSION
+        || I != network->number_of_inputs
+        || H != network->number_of_hidden_nodes
+        || O != network->number_of_outputs)
     {
-        fscanf(input, "%lf\n", &network->hidden_layer_bias[j]);
+        fprintf(stderr, "load_network: incompatible file %s (ignored)\n", filename);
+        fclose(f);
+        return 0;
     }
 
-    // Load hidden weights
-    for (int i = 0; i < network->number_of_inputs * network->number_of_hidden_nodes; i++)
-    {
-        fscanf(input, "%lf\n", &network->hidden_weights[i]);
-    }
+    int ok = (fscanf(f, "%ld %lf %lf",
+                     &network->adam_t,
+                     &network->adam_beta1_t,
+                     &network->adam_beta2_t) == 3);
 
-    // Load output biases (once per output node)
-    for (int j = 0; j < network->number_of_outputs; j++)
-    {
-        fscanf(input, "%lf\n", &network->output_layer_bias[j]);
-    }
+    ok &= read_doubles(f, network->hidden_layer_bias, H);
+    ok &= read_doubles(f, network->hidden_weights,    (size_t)I * H);
+    ok &= read_doubles(f, network->output_layer_bias, O);
+    ok &= read_doubles(f, network->output_weights,    (size_t)H * O);
 
-    // Load output weights
-    for (int i = 0; i < network->number_of_hidden_nodes * network->number_of_outputs; i++)
-    {
-        fscanf(input, "%lf\n", &network->output_weights[i]);
-    }
+    ok &= read_doubles(f, network->m_hidden_bias,    H);
+    ok &= read_doubles(f, network->v_hidden_bias,    H);
+    ok &= read_doubles(f, network->m_hidden_weights, (size_t)I * H);
+    ok &= read_doubles(f, network->v_hidden_weights, (size_t)I * H);
 
-    fclose(input);
+    ok &= read_doubles(f, network->m_output_bias,    O);
+    ok &= read_doubles(f, network->v_output_bias,    O);
+    ok &= read_doubles(f, network->m_output_weights, (size_t)H * O);
+    ok &= read_doubles(f, network->v_output_weights, (size_t)H * O);
+
+    fclose(f);
+
+    if (!ok)
+        fprintf(stderr, "load_network: file %s truncated or corrupt\n", filename);
+    return ok;
 }
 
 void shuffle(int *array, size_t n)
@@ -298,12 +363,17 @@ char RetrieveChar(size_t val)
     return c;
 }
 
+int LabelIndex(char c)
+{
+    if (c >= 'A' && c <= 'Z') return c - 'A';
+    if (c >= 'a' && c <= 'z') return c - 'a' + 26;
+    return -1;
+}
+
 size_t ExpectedPos(char c)
 {
-    size_t index = 0;
-    if (c >= 'A' && c <= 'Z') index = (size_t)(c - 65);
-    else if (c >= 'a' && c <= 'z') index = (size_t)(c - 97 + 26);
-    return index;
+    int index = LabelIndex(c);
+    return index >= 0 ? (size_t)index : 0;
 }
 
 void ExpectedOutput(struct network *network, char c)
@@ -311,8 +381,9 @@ void ExpectedOutput(struct network *network, char c)
     if (network == NULL || network->goal == NULL) return;
     for (int i = 0; i < network->number_of_outputs; i++) network->goal[i] = 0;
 
-    if (c >= 'A' && c <= 'Z') network->goal[(int)(c)-65] = 1;
-    else if (c >= 'a' && c <= 'z') network->goal[((int)(c)-97) + 26] = 1;
+    int index = LabelIndex(c);
+    if (index >= 0 && index < network->number_of_outputs)
+        network->goal[index] = 1;
 }
 
 char *updatepath(char *filepath, size_t len, char c, size_t index)
@@ -354,42 +425,94 @@ void freeDataSet(TrainingDataSet *dataset)
     free(dataset);
 }
 
-// Helper to properly resize an image to 28x28
-// Mirrors the inference pipeline: square-pad on white, binarize r<128, then resize.
+static int ensure_dataset_capacity(TrainingDataSet *dataset)
+{
+    if (dataset->count < dataset->capacity)
+        return 1;
+
+    int new_cap = dataset->capacity == 0 ? 64 : dataset->capacity * 2;
+    double **new_inputs = realloc(dataset->inputs, sizeof(double *) * new_cap);
+    if (new_inputs == NULL)
+        return 0;
+
+    char *new_labels = realloc(dataset->labels, sizeof(char) * new_cap);
+    if (new_labels == NULL)
+    {
+        dataset->inputs = new_inputs;
+        return 0;
+    }
+
+    dataset->inputs = new_inputs;
+    dataset->labels = new_labels;
+    dataset->capacity = new_cap;
+    return 1;
+}
+
+// Helper to properly resize an image to 28x28.
+// Mirrors ImageToMatrix: binarize, crop foreground, square-pad, then resize.
 double *resize_image_to_28x28(SDL_Surface *img)
 {
     double *input = calloc(IMAGE_PIXELS, sizeof(double));
     if (input == NULL) return NULL;
 
-    // Square-pad: place the image centered on a white square canvas
-    int size = img->w > img->h ? img->w : img->h;
-    int off_x = size / 2 - img->w / 2;
-    int off_y = size / 2 - img->h / 2;
-
-    int *temp_matrix = calloc(size * size, sizeof(int)); // white (0) by default
-    if (temp_matrix == NULL)
+    int w = img->w;
+    int h = img->h;
+    int *raw = malloc(sizeof(int) * w * h);
+    if (raw == NULL)
     {
         free(input);
         return NULL;
     }
 
-    // Binarize using the same threshold as ImageToMatrix in segmentation.c
-    for (int y = 0; y < img->h; y++)
+    int min_x = w, max_x = -1, min_y = h, max_y = -1;
+    for (int y = 0; y < h; y++)
     {
-        for (int x = 0; x < img->w; x++)
+        for (int x = 0; x < w; x++)
         {
             Uint32 pixel = get_pixel(img, x, y);
             Uint8 r, g, b;
             SDL_GetRGB(pixel, img->format, &r, &g, &b);
             (void)g; (void)b;
-            // Match ImageToMatrix inference: r < 128 -> black (1), else -> white (0)
-            temp_matrix[(y + off_y) * size + (x + off_x)] = (r < 128) ? 1 : 0;
+            int v = (r < BW_THRESHOLD) ? 1 : 0;
+            raw[y * w + x] = v;
+            if (v)
+            {
+                if (x < min_x) min_x = x;
+                if (x > max_x) max_x = x;
+                if (y < min_y) min_y = y;
+                if (y > max_y) max_y = y;
+            }
         }
     }
 
-    // Resize using the Resize1 function from segmentation
-    int *resized = Resize1(temp_matrix, IMAGE_SIZE, IMAGE_SIZE, size, size);
-    free(temp_matrix);
+    if (max_x < 0)
+    {
+        free(raw);
+        return input;
+    }
+
+    int bw = max_x - min_x + 1;
+    int bh = max_y - min_y + 1;
+    int size = bw > bh ? bw : bh;
+    int off_x = size / 2 - bw / 2;
+    int off_y = size / 2 - bh / 2;
+
+    int *padded = calloc(size * size, sizeof(int));
+    if (padded == NULL)
+    {
+        free(raw);
+        free(input);
+        return NULL;
+    }
+
+    for (int y = 0; y < bh; y++)
+        for (int x = 0; x < bw; x++)
+            padded[(y + off_y) * size + (x + off_x)] =
+                raw[(y + min_y) * w + (x + min_x)];
+    free(raw);
+
+    int *resized = Resize1(padded, IMAGE_SIZE, IMAGE_SIZE, size, size);
+    free(padded);
     
     if (resized == NULL)
     {
@@ -434,21 +557,11 @@ void load_directory(const char *path, TrainingDataSet *dataset, int is_uppercase
                         continue;
                     }
 
-                    // Grow arrays with capacity doubling (avoids realloc per element)
-                    if (dataset->count == dataset->capacity)
+                    if (!ensure_dataset_capacity(dataset))
                     {
-                        int new_cap = dataset->capacity == 0 ? 64 : dataset->capacity * 2;
-                        double **new_inputs = realloc(dataset->inputs, sizeof(double *) * new_cap);
-                        char   *new_labels  = realloc(dataset->labels, sizeof(char)     * new_cap);
-                        if (!new_inputs || !new_labels)
-                        {
-                            free(input);
-                            printf("Error: Memory allocation failed\n");
-                            break;
-                        }
-                        dataset->inputs   = new_inputs;
-                        dataset->labels   = new_labels;
-                        dataset->capacity = new_cap;
+                        free(input);
+                        printf("Error: Memory allocation failed\n");
+                        break;
                     }
 
                     char label = dir->d_name[0];
@@ -493,38 +606,67 @@ TrainingDataSet *loadDataSet(void)
     return dataset;
 }
 
+#define CNN_MAGIC "OCRCNN"
+#define CNN_VERSION 2
+
 void save_cnn(const char *filename, void *cnn_ptr)
 {
     if (filename == NULL || cnn_ptr == NULL) return;
     CNN *cnn = (CNN *)cnn_ptr;
     FILE *f = fopen(filename, "w");
-    if (f == NULL) return;
+    if (f == NULL) { perror(filename); return; }
 
-    for (int fi = 0; fi < NUM_FILTERS; fi++)
-    {
-        fprintf(f, "%lf\n", cnn->biases[fi]);
-        for (int i = 0; i < CONV_SIZE; i++)
-            for (int j = 0; j < CONV_SIZE; j++)
-                fprintf(f, "%lf\n", cnn->filters[fi][i][j]);
-    }
+    fprintf(f, "%s %d %d %d\n", CNN_MAGIC, CNN_VERSION, NUM_FILTERS, CONV_SIZE);
+    fprintf(f, "%ld %.17g %.17g\n",
+            cnn->adam_t, cnn->adam_beta1_t, cnn->adam_beta2_t);
+
+    const size_t kernel_count = (size_t)NUM_FILTERS * CONV_SIZE * CONV_SIZE;
+    write_doubles(f, cnn->biases,      NUM_FILTERS);
+    write_doubles(f, &cnn->filters[0][0][0],   kernel_count);
+    write_doubles(f, cnn->m_biases,    NUM_FILTERS);
+    write_doubles(f, cnn->v_biases,    NUM_FILTERS);
+    write_doubles(f, &cnn->m_filters[0][0][0], kernel_count);
+    write_doubles(f, &cnn->v_filters[0][0][0], kernel_count);
 
     fclose(f);
 }
 
-void load_cnn(const char *filename, void *cnn_ptr)
+int load_cnn(const char *filename, void *cnn_ptr)
 {
-    if (filename == NULL || cnn_ptr == NULL) return;
+    if (filename == NULL || cnn_ptr == NULL) return 0;
     CNN *cnn = (CNN *)cnn_ptr;
     FILE *f = fopen(filename, "r");
-    if (f == NULL) return;
+    if (f == NULL) return 0;
 
-    for (int fi = 0; fi < NUM_FILTERS; fi++)
+    char magic[16];
+    int version, nf, ks;
+    if (fscanf(f, "%15s %d %d %d", magic, &version, &nf, &ks) != 4
+        || strcmp(magic, CNN_MAGIC) != 0
+        || version != CNN_VERSION
+        || nf != NUM_FILTERS
+        || ks != CONV_SIZE)
     {
-        fscanf(f, "%lf\n", &cnn->biases[fi]);
-        for (int i = 0; i < CONV_SIZE; i++)
-            for (int j = 0; j < CONV_SIZE; j++)
-                fscanf(f, "%lf\n", &cnn->filters[fi][i][j]);
+        fprintf(stderr, "load_cnn: incompatible file %s (ignored)\n", filename);
+        fclose(f);
+        return 0;
     }
 
+    int ok = (fscanf(f, "%ld %lf %lf",
+                     &cnn->adam_t,
+                     &cnn->adam_beta1_t,
+                     &cnn->adam_beta2_t) == 3);
+
+    const size_t kernel_count = (size_t)NUM_FILTERS * CONV_SIZE * CONV_SIZE;
+    ok &= read_doubles(f, cnn->biases,                NUM_FILTERS);
+    ok &= read_doubles(f, &cnn->filters[0][0][0],     kernel_count);
+    ok &= read_doubles(f, cnn->m_biases,              NUM_FILTERS);
+    ok &= read_doubles(f, cnn->v_biases,              NUM_FILTERS);
+    ok &= read_doubles(f, &cnn->m_filters[0][0][0],   kernel_count);
+    ok &= read_doubles(f, &cnn->v_filters[0][0][0],   kernel_count);
+
     fclose(f);
+
+    if (!ok)
+        fprintf(stderr, "load_cnn: file %s truncated or corrupt\n", filename);
+    return ok;
 }

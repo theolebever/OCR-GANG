@@ -1,12 +1,11 @@
 #ifndef OCR_H
 #define OCR_H
 
-#include <gtk/gtk.h>
+// Runs the full OCR pipeline and returns the recognized text (caller frees).
+// Returns NULL on failure.
+char *PerformOCR(const char *filepath);
 
-// Starts the OCR process from CLI
-void StartOCR(char *filepath);
-
-// Starts the OCR process from GUI
-int OCR(GtkButton *button, GtkTextBuffer *buffer);
+// CLI entry point: runs OCR, prints the result, exits on failure.
+void StartOCR(const char *filepath);
 
 #endif

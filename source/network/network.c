@@ -18,6 +18,7 @@ void freeNetwork(struct network *net)
     free(net->delta_input);
 
     free(net->hidden_layer);
+    free(net->hidden_pre_activation);
     free(net->delta_hidden);
     free(net->hidden_layer_bias);
     free(net->hidden_weights);
@@ -36,8 +37,15 @@ void freeNetwork(struct network *net)
     free(net->v_output_bias);
 
     free(net->goal);
+    free(net->dropout_mask);
 
     free(net);
+}
+
+void set_training_mode(struct network *net, int is_training)
+{
+    if (net)
+        net->is_training = is_training;
 }
 
 
@@ -73,6 +81,7 @@ struct network *InitializeNetwork(double i, double h, double o, char *filepath)
     network->v_output_bias = NULL;
     network->goal = NULL;
     network->hidden_pre_activation = NULL;
+    network->dropout_mask = NULL;
 
     network->input_layer = calloc(network->number_of_inputs, sizeof(double));
     network->delta_input = calloc(network->number_of_inputs, sizeof(double));
@@ -86,16 +95,18 @@ struct network *InitializeNetwork(double i, double h, double o, char *filepath)
     int H = network->number_of_hidden_nodes;
     int O = network->number_of_outputs;
 
-    network->hidden_layer       = calloc(H, sizeof(double));
-    network->delta_hidden       = calloc(H, sizeof(double));
-    network->hidden_layer_bias  = calloc(H, sizeof(double));
-    network->hidden_weights     = calloc(I * H, sizeof(double));
-    network->m_hidden_weights   = calloc(I * H, sizeof(double));
-    network->v_hidden_weights   = calloc(I * H, sizeof(double));
-    network->m_hidden_bias      = calloc(H, sizeof(double));
-    network->v_hidden_bias      = calloc(H, sizeof(double));
+    network->hidden_layer           = calloc(H, sizeof(double));
+    network->hidden_pre_activation  = calloc(H, sizeof(double));
+    network->delta_hidden           = calloc(H, sizeof(double));
+    network->hidden_layer_bias      = calloc(H, sizeof(double));
+    network->hidden_weights         = calloc(I * H, sizeof(double));
+    network->m_hidden_weights       = calloc(I * H, sizeof(double));
+    network->v_hidden_weights       = calloc(I * H, sizeof(double));
+    network->m_hidden_bias          = calloc(H, sizeof(double));
+    network->v_hidden_bias          = calloc(H, sizeof(double));
 
-    if (network->hidden_layer == NULL || network->delta_hidden == NULL ||
+    if (network->hidden_layer == NULL || network->hidden_pre_activation == NULL ||
+        network->delta_hidden == NULL ||
         network->hidden_layer_bias == NULL || network->hidden_weights == NULL ||
         network->m_hidden_weights == NULL || network->v_hidden_weights == NULL ||
         network->m_hidden_bias == NULL || network->v_hidden_bias == NULL)
@@ -113,30 +124,27 @@ struct network *InitializeNetwork(double i, double h, double o, char *filepath)
     network->m_output_bias      = calloc(O, sizeof(double));
     network->v_output_bias      = calloc(O, sizeof(double));
     network->goal               = calloc(O, sizeof(double));
+    network->dropout_mask       = calloc(H, sizeof(double));
 
     if (network->output_layer == NULL || network->delta_output == NULL ||
         network->output_layer_bias == NULL || network->output_weights == NULL ||
         network->m_output_weights == NULL || network->v_output_weights == NULL ||
         network->m_output_bias == NULL || network->v_output_bias == NULL ||
-        network->goal == NULL)
+        network->goal == NULL || network->dropout_mask == NULL)
     {
         freeNetwork(network);
         errx(1, "Not enough memory!");
     }
 
-    network->eta          = 0.001;  // Adam default learning rate
-    network->adam_t       = 0;
-    network->adam_beta1_t = 1.0;
-    network->adam_beta2_t = 1.0;
+    network->eta = 0.001;  // Adam default learning rate
 
+    // Always start from a clean random init, then try to load weights on top.
+    // If the file is absent/incompatible/corrupt, we keep the fresh init.
+    initialization(network);
     if (filepath != NULL && !fileempty(filepath))
     {
-        load_network(filepath, network);
-        // Adam state is not persisted; moment buffers stay zeroed, timestep stays 0
-    }
-    else
-    {
-        initialization(network);
+        if (!load_network(filepath, network))
+            initialization(network);
     }
     return network;
 }
@@ -188,6 +196,8 @@ void initialization(struct network *net)
     net->adam_t      = 0;
     net->adam_beta1_t = 1.0;
     net->adam_beta2_t = 1.0;
+    net->dropout_rate = (O > 1) ? 0.3 : 0.0;  // OCR only
+    net->is_training = 1;     // Start in training mode
 }
 
 
@@ -211,7 +221,23 @@ void forward_pass(struct network *net)
     }
 
     for (int j = 0; j < H; j++)
+    {
+        net->hidden_pre_activation[j] = net->hidden_layer[j];
         net->hidden_layer[j] = relu(net->hidden_layer[j]);
+    }
+
+    // Apply dropout during training
+    if (net->is_training && net->dropout_rate > 0.0)
+    {
+        double scale = 1.0 / (1.0 - net->dropout_rate);
+        for (int j = 0; j < H; j++)
+        {
+            // Bernoulli dropout: keep with probability (1 - dropout_rate)
+            double keep = ((double)rand() / RAND_MAX) > net->dropout_rate ? 1.0 : 0.0;
+            net->dropout_mask[j] = keep;
+            net->hidden_layer[j] *= keep * scale;
+        }
+    }
 
     // Output layer — initialize with biases
     for (int o = 0; o < O; o++)
@@ -265,7 +291,22 @@ void back_propagation(struct network *net)
         double *w_row = net->output_weights + h * O;
         for (int o = 0; o < O; o++)
             sum += w_row[o] * net->delta_output[o];
-        net->delta_hidden[h] = sum * dRelu(net->hidden_layer[h]);
+        net->delta_hidden[h] = sum * dRelu(net->hidden_pre_activation[h]);
+
+        // Apply dropout mask to gradients (only backprop through kept neurons)
+        if (net->is_training && net->dropout_rate > 0.0)
+            net->delta_hidden[h] *= net->dropout_mask[h] / (1.0 - net->dropout_rate);
+    }
+
+    // Compute input gradients for CNN BEFORE updating hidden_weights,
+    // so we use the same W that produced the forward pass.
+    for (int i = 0; i < net->number_of_inputs; i++)
+    {
+        double sum = 0.0;
+        double *w_row = net->hidden_weights + i * H;
+        for (int h = 0; h < H; h++)
+            sum += w_row[h] * net->delta_hidden[h];
+        net->delta_input[i] = sum;
     }
 
     // Update output weights with Adam
@@ -326,16 +367,6 @@ void back_propagation(struct network *net)
         double m_hat = net->m_hidden_bias[h] * inv_bc1;
         double v_hat = net->v_hidden_bias[h] * inv_bc2;
         net->hidden_layer_bias[h] -= eta * m_hat / (my_sqrt(v_hat) + ADAM_EPS);
-    }
-
-    // Compute input gradients for CNN
-    for (int i = 0; i < net->number_of_inputs; i++)
-    {
-        double sum = 0.0;
-        double *w_row = net->hidden_weights + i * H;
-        for (int h = 0; h < H; h++)
-            sum += w_row[h] * net->delta_hidden[h];
-        net->delta_input[i] = sum;
     }
 }
 

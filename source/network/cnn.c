@@ -3,26 +3,35 @@
 #include <stdio.h>
 #include <string.h>
 
-CNN* init_cnn() {
-    CNN* cnn = calloc(1, sizeof(CNN));
-    if (!cnn) return NULL;
+void cnn_reset(CNN* cnn) {
+    if (!cnn) return;
 
-    // He initialization for filters
+    // He-uniform initialization: weights ~ U(-sqrt(6/fan_in), sqrt(6/fan_in))
+    const int fan_in = CONV_SIZE * CONV_SIZE;
     for (int f = 0; f < NUM_FILTERS; f++) {
         for (int i = 0; i < CONV_SIZE; i++) {
             for (int j = 0; j < CONV_SIZE; j++) {
-                cnn->filters[f][i][j] = ((double)rand() / RAND_MAX * 2.0 - 1.0)
-                                        * my_sqrt(2.0 / (CONV_SIZE * CONV_SIZE));
+                cnn->filters[f][i][j] = init_weight_he(fan_in);
             }
         }
         cnn->biases[f] = 0.0;
     }
 
-    cnn->adam_t      = 0;
+    memset(cnn->m_filters, 0, sizeof(cnn->m_filters));
+    memset(cnn->v_filters, 0, sizeof(cnn->v_filters));
+    memset(cnn->m_biases,  0, sizeof(cnn->m_biases));
+    memset(cnn->v_biases,  0, sizeof(cnn->v_biases));
+
+    cnn->adam_t       = 0;
     cnn->adam_beta1_t = 1.0;
     cnn->adam_beta2_t = 1.0;
-    cnn->image_ptr   = NULL;
+    cnn->image_ptr    = NULL;
+}
 
+CNN* init_cnn() {
+    CNN* cnn = calloc(1, sizeof(CNN));
+    if (!cnn) return NULL;
+    cnn_reset(cnn);
     return cnn;
 }
 

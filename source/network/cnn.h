@@ -50,6 +50,8 @@ typedef struct {
 
 CNN* init_cnn();
 void free_cnn(CNN* cnn);
+// Reset weights, biases and Adam state to freshly-initialized values.
+void cnn_reset(CNN* cnn);
 
 // Forward pass: writes 1352 doubles into out[]. No allocation.
 void cnn_forward(CNN* cnn, double image[IMAGE_PIXELS], double *out);
